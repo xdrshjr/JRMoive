@@ -6,7 +6,18 @@ an AI drama from script to final video using the orchestrator.
 """
 
 import sys
+import os
 from pathlib import Path
+
+# Fix Windows console encoding for Unicode characters
+if sys.platform == 'win32':
+    try:
+        os.system('chcp 65001 > nul')
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    except Exception:
+        pass  # If it fails, fall back to ASCII characters
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent
@@ -90,9 +101,15 @@ async def progress_callback(percent: float, message: str):
     # Display progress bar
     bar_length = 40
     filled = int(bar_length * percent / 100)
-    bar = '█' * filled + '░' * (bar_length - filled)
 
-    print(f"\r[{bar}] {percent:.1f}% - {message}", end='', flush=True)
+    # Try Unicode characters first, fall back to ASCII if encoding fails
+    try:
+        bar = '█' * filled + '░' * (bar_length - filled)
+        print(f"\r[{bar}] {percent:.1f}% - {message}", end='', flush=True)
+    except UnicodeEncodeError:
+        # Fallback to ASCII characters
+        bar = '#' * filled + '-' * (bar_length - filled)
+        print(f"\r[{bar}] {percent:.1f}% - {message}", end='', flush=True)
 
     if percent >= 100:
         print()  # New line when complete
@@ -115,10 +132,10 @@ async def example_basic_usage():
             progress_callback=progress_callback
         )
 
-        print(f"\n✓ Video generated successfully: {video_path}")
+        print(f"\n[OK] Video generated successfully: {video_path}")
 
     except Exception as e:
-        print(f"\n✗ Generation failed: {e}")
+        print(f"\n[ERROR] Generation failed: {e}")
         logger.error(f"Generation error: {e}", exc_info=True)
 
     finally:
@@ -169,7 +186,7 @@ async def example_advanced_usage():
             progress_callback=progress_callback
         )
 
-        print(f"\n✓ Video generated successfully: {video_path}")
+        print(f"\n[OK] Video generated successfully: {video_path}")
 
         # Get task status
         status = await orchestrator.get_task_status()
@@ -179,7 +196,7 @@ async def example_advanced_usage():
         print(f"  - Elapsed Time: {status['elapsed_time']:.2f}s")
 
     except Exception as e:
-        print(f"\n✗ Generation failed: {e}")
+        print(f"\n[ERROR] Generation failed: {e}")
         logger.error(f"Generation error: {e}", exc_info=True)
 
     finally:
@@ -212,10 +229,10 @@ async def example_from_file():
             progress_callback=progress_callback
         )
 
-        print(f"\n✓ Video generated successfully: {video_path}")
+        print(f"\n[OK] Video generated successfully: {video_path}")
 
     except Exception as e:
-        print(f"\n✗ Generation failed: {e}")
+        print(f"\n[ERROR] Generation failed: {e}")
         logger.error(f"Generation error: {e}", exc_info=True)
 
     finally:
@@ -248,7 +265,7 @@ async def example_with_checkpoint():
             "title": "时光倒流"
         }
     )
-    print("  ✓ Saved checkpoint: parsing")
+    print("  [OK] Saved checkpoint: parsing")
 
     # Stage 2: Image generation
     checkpoint_manager.save_checkpoint(
@@ -263,7 +280,7 @@ async def example_with_checkpoint():
             ]
         }
     )
-    print("  ✓ Saved checkpoint: image_generation")
+    print("  [OK] Saved checkpoint: image_generation")
 
     # List checkpoints
     print(f"\nCheckpoints for task '{task_id}':")
@@ -284,7 +301,7 @@ async def example_with_checkpoint():
 
     # Clean up
     checkpoint_manager.clear_checkpoints(task_id)
-    print(f"\n✓ Cleaned up checkpoints for task '{task_id}'")
+    print(f"\n[OK] Cleaned up checkpoints for task '{task_id}'")
 
 
 async def example_progress_monitoring():

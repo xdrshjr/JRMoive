@@ -42,11 +42,11 @@ class Veo3Service:
         self.logger = logging.getLogger(__name__)
 
         # 使用 Bearer token 认证
+        # 注意：不设置默认 Content-Type，因为 multipart 请求需要不同的 Content-Type
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Authorization": f"Bearer {self.api_key}"
             },
             timeout=120.0  # Veo3生成视频可能较慢
         )
@@ -226,20 +226,67 @@ class Veo3Service:
 
             # 查询任务状态
             status = await self.check_task_status(task_id)
-            state = status.get('state')
+            state = status.get('status')  # OpenAI 格式使用 'status' 字段
+            progress = status.get('progress', 0)
 
             self.logger.info(
-                f"Task {task_id} status: {state} "
+                f"Task {task_id} status: {state}, progress: {progress}% "
                 f"({elapsed:.1f}s elapsed)"
             )
 
             if state == 'completed':
-                return status
+                # 任务完成，检查是否包含 video_url
+                video_url = status.get('video_url')
+                if video_url:
+                    self.logger.info(f"Task {task_id} completed with video URL: {video_url}")
+                    return status
+                else:
+                    # 如果没有 video_url，尝试通过 content 端点获取
+                    self.logger.info(f"Task {task_id} completed, fetching video URL...")
+                    video_url = await self._download_video_content(task_id)
+                    status['video_url'] = video_url
+                    return status
             elif state == 'failed':
                 error_msg = status.get('error', 'Unknown error')
                 raise RuntimeError(f"Video generation failed: {error_msg}")
 
             await asyncio.sleep(poll_interval)
+
+    async def _download_video_content(self, task_id: str) -> str:
+        """
+        通过 OpenAI 格式的 content 端点获取视频下载链接
+
+        Args:
+            task_id: 任务ID
+
+        Returns:
+            视频下载URL
+        """
+        # OpenAI 格式：GET /v1/videos/{id}/content
+        response = await self.client.get(f"{self.endpoint}/{task_id}/content", follow_redirects=False)
+
+        self.logger.debug(f"Video content response status: {response.status_code}")
+        self.logger.debug(f"Video content response headers: {dict(response.headers)}")
+
+        # 如果返回 302/307 重定向，获取 Location 头中的实际视频 URL
+        if response.status_code in (302, 307, 301):
+            video_url = response.headers.get('Location')
+            if video_url:
+                self.logger.info(f"Got video URL from redirect: {video_url}")
+                return video_url
+            else:
+                raise ValueError("Redirect response missing Location header")
+
+        # 如果返回 200 且是 JSON，可能包含 video_url 字段
+        response.raise_for_status()
+        if 'application/json' in response.headers.get('content-type', ''):
+            result = response.json()
+            video_url = result.get('video_url') or result.get('url')
+            if video_url:
+                self.logger.info(f"Got video URL from JSON response: {video_url}")
+                return video_url
+
+        raise ValueError("Could not get video URL from content endpoint")
 
     async def check_task_status(self, task_id: str) -> Dict[str, Any]:
         """
@@ -251,8 +298,22 @@ class Veo3Service:
         Returns:
             任务状态信息
         """
-        response = await self.client.get(f"/task/{task_id}")
+        # OpenAI 格式的任务状态查询
+        response = await self.client.get(f"{self.endpoint}/{task_id}")
+
+        self.logger.debug(f"Task status response status: {response.status_code}")
+        self.logger.debug(f"Task status response headers: {dict(response.headers)}")
+        self.logger.debug(f"Task status response content: {response.text[:500]}")
+
         response.raise_for_status()
+
+        # 检查是否是 JSON 响应
+        content_type = response.headers.get('content-type', '')
+        if 'application/json' not in content_type:
+            self.logger.error(f"Unexpected content type: {content_type}")
+            self.logger.error(f"Response body: {response.text[:1000]}")
+            raise ValueError(f"API returned non-JSON response: {content_type}")
+
         return response.json()
 
     async def download_video(

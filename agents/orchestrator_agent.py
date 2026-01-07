@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, Callable
 from pathlib import Path
 from agents.base_agent import BaseAgent
 from agents.script_parser_agent import ScriptParserAgent
+from agents.character_reference_agent import CharacterReferenceAgent
 from agents.image_generator_agent import ImageGenerationAgent
 from agents.video_generator_agent import VideoGenerationAgent
 from agents.video_composer_agent import VideoComposerAgent
@@ -29,9 +30,15 @@ class DramaGenerationOrchestrator(BaseAgent):
 
         # 初始化子Agent
         self.script_parser = ScriptParserAgent()
+        self.character_reference_agent = CharacterReferenceAgent(
+            config=config.get('character_reference', {})
+        )
         self.image_generator = ImageGenerationAgent(config=config.get('image', {}))
         self.video_generator = VideoGenerationAgent(config=config.get('video', {}))
         self.video_composer = VideoComposerAgent(config=config.get('composer', {}))
+
+        # 一致性控制开关
+        self.enable_character_references = config.get('enable_character_references', True)
 
         # 进度回调
         self.progress_callback: Optional[Callable] = None
@@ -62,33 +69,63 @@ class DramaGenerationOrchestrator(BaseAgent):
         self.current_task_id = f"drama_{self.start_time.strftime('%Y%m%d_%H%M%S')}"
 
         try:
-            # 步骤1：解析剧本 (0% -> 10%)
+            # 步骤1：解析剧本 (0% -> 5%)
             await self._update_progress(0, "Starting drama generation...")
             await self._update_progress(1, "Parsing script...")
 
             script = await self.script_parser.execute(script_text)
 
             await self._update_progress(
-                10,
+                5,
                 f"Script parsed: {script.total_scenes} scenes, "
+                f"{len(script.characters)} characters, "
                 f"{script.total_duration:.1f}s duration"
             )
 
-            # 步骤2：生成分镜图片 (10% -> 40%)
-            await self._update_progress(10, "Generating storyboard images...")
+            # 步骤2：生成角色参考图 (5% -> 15%)
+            reference_data = None
+            if self.enable_character_references and script.characters:
+                await self._update_progress(5, "Generating character reference sheets...")
+
+                try:
+                    reference_data = await self.character_reference_agent.execute(script.characters)
+
+                    # 统计成功生成的参考图数量
+                    success_count = sum(
+                        1 for char_data in reference_data.values()
+                        if 'error' not in char_data
+                    )
+
+                    await self._update_progress(
+                        15,
+                        f"Generated references for {success_count}/{len(script.characters)} characters"
+                    )
+
+                except Exception as e:
+                    self.logger.warning(f"Character reference generation failed: {e}")
+                    self.logger.warning("Continuing with prompt-only enhancement")
+                    reference_data = None
+                    await self._update_progress(15, "Skipped character references (using prompt enhancement)")
+            else:
+                await self._update_progress(15, "Character references disabled, using prompt enhancement only")
+
+            # 步骤3：生成分镜图片 (15% -> 45%)
+            await self._update_progress(15, "Generating storyboard images with character consistency...")
 
             image_results = await self.image_generator.execute_concurrent(
                 script.scenes,
-                progress_callback=self._create_sub_progress_callback(10, 40)
+                script=script,
+                reference_data=reference_data,
+                progress_callback=self._create_sub_progress_callback(15, 45)
             )
 
             await self._update_progress(
-                40,
-                f"Generated {len(image_results)} images successfully"
+                45,
+                f"Generated {len(image_results)} consistent images"
             )
 
-            # 步骤3：生成视频片段 (40% -> 70%)
-            await self._update_progress(40, "Converting images to videos...")
+            # 步骤4：生成视频片段 (45% -> 75%)
+            await self._update_progress(45, "Converting images to videos...")
 
             video_results = await self.video_generator.execute(
                 image_results,
@@ -96,12 +133,12 @@ class DramaGenerationOrchestrator(BaseAgent):
             )
 
             await self._update_progress(
-                70,
+                75,
                 f"Generated {len(video_results)} video clips"
             )
 
-            # 步骤4：合成最终视频 (70% -> 95%)
-            await self._update_progress(70, "Composing final video...")
+            # 步骤5：合成最终视频 (75% -> 95%)
+            await self._update_progress(75, "Composing final video...")
 
             final_video_path = await self.video_composer.execute(
                 video_results,
@@ -112,8 +149,8 @@ class DramaGenerationOrchestrator(BaseAgent):
 
             await self._update_progress(95, "Saving metadata...")
 
-            # 步骤5：保存元数据 (95% -> 100%)
-            await self._save_metadata(script, final_video_path)
+            # 步骤6：保存元数据 (95% -> 100%)
+            await self._save_metadata(script, final_video_path, reference_data)
 
             await self._update_progress(100, "Drama generation completed!")
 
@@ -178,13 +215,14 @@ class DramaGenerationOrchestrator(BaseAgent):
 
         return sub_progress_callback
 
-    async def _save_metadata(self, script: Script, video_path: str):
+    async def _save_metadata(self, script: Script, video_path: str, reference_data: Optional[Dict] = None):
         """
         保存生成元数据
 
         Args:
             script: 剧本对象
             video_path: 视频文件路径
+            reference_data: 角色参考数据（可选）
         """
         try:
             metadata = {
@@ -199,6 +237,11 @@ class DramaGenerationOrchestrator(BaseAgent):
                 'output': {
                     'video_path': video_path,
                     'filename': Path(video_path).name
+                },
+                'consistency': {
+                    'character_references_enabled': self.enable_character_references,
+                    'references_generated': reference_data is not None,
+                    'character_reference_count': len(reference_data) if reference_data else 0
                 },
                 'config': self.config,
                 'generation_time': (datetime.now() - self.start_time).total_seconds()
@@ -248,6 +291,7 @@ class DramaGenerationOrchestrator(BaseAgent):
     async def close(self):
         """关闭所有子Agent资源"""
         try:
+            await self.character_reference_agent.close()
             await self.image_generator.close()
             await self.video_generator.close()
             await self.video_composer.close()

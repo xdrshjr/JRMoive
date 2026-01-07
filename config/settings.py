@@ -1,6 +1,6 @@
 """Configuration management module"""
 from pydantic_settings import BaseSettings
-from typing import Optional
+from typing import Optional, List
 
 
 class Settings(BaseSettings):
@@ -25,6 +25,22 @@ class Settings(BaseSettings):
     temp_dir: str = "./temp"
     log_level: str = "INFO"
     max_concurrent_requests: int = 5
+
+    # 角色一致性配置
+    enable_character_references: bool = True  # 是否启用角色参考图生成
+    reference_views: List[str] = [  # 要生成的参考视图列表
+        "front_view",
+        "side_view",
+        "close_up",
+        "full_body"
+    ]
+    reference_image_size: int = 1024  # 参考图尺寸（像素）
+    reference_cfg_scale: float = 8.0  # 参考图生成的CFG引导强度
+    reference_steps: int = 60  # 参考图生成的推理步数
+
+    # 场景图片一致性配置
+    scene_cfg_scale: float = 7.5  # 场景图生成的CFG引导强度
+    scene_steps: int = 50  # 场景图生成的推理步数
 
     # 可选配置
     openai_api_key: Optional[str] = None

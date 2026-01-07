@@ -6,8 +6,9 @@ from datetime import datetime
 
 from agents.base_agent import BaseAgent
 from services.nano_banana_service import NanoBananaService
-from models.script_models import Scene
+from models.script_models import Scene, Character, Script
 from utils.concurrency import ConcurrencyLimiter, RateLimiter, TaskStats
+from utils.character_enhancer import CharacterDescriptionEnhancer
 import logging
 
 
@@ -44,6 +45,10 @@ class ImageGenerationAgent(BaseAgent):
         # 进度回调
         self.progress_callback: Optional[Callable] = None
 
+        # 一致性增强器（由外部设置）
+        self.character_enhancer: Optional[CharacterDescriptionEnhancer] = None
+        self.character_dict: Optional[Dict[str, Character]] = None
+
     async def execute(self, scenes: List[Scene]) -> List[Dict[str, Any]]:
         """
         执行批量图片生成（顺序执行）
@@ -75,6 +80,8 @@ class ImageGenerationAgent(BaseAgent):
     async def execute_concurrent(
         self,
         scenes: List[Scene],
+        script: Optional[Script] = None,
+        reference_data: Optional[Dict[str, Dict[str, Any]]] = None,
         progress_callback: Optional[Callable] = None
     ) -> List[Dict[str, Any]]:
         """
@@ -82,6 +89,8 @@ class ImageGenerationAgent(BaseAgent):
 
         Args:
             scenes: 场景列表
+            script: 完整脚本对象（可选，用于一致性增强）
+            reference_data: 角色参考数据（可选，用于一致性增强）
             progress_callback: 进度回调函数
 
         Returns:
@@ -91,6 +100,20 @@ class ImageGenerationAgent(BaseAgent):
             raise ValueError("Invalid scenes data")
 
         self.progress_callback = progress_callback
+
+        # 初始化一致性增强器
+        if reference_data and script:
+            self.logger.info("Initializing character consistency enhancer")
+            self.character_enhancer = CharacterDescriptionEnhancer(reference_data)
+            self.character_dict = {c.name: c for c in script.characters}
+        elif script:
+            # 即使没有参考数据，也可以使用角色字典来增强prompt
+            self.logger.info("Using character dictionary for prompt enhancement")
+            self.character_dict = {c.name: c for c in script.characters}
+        else:
+            self.character_enhancer = None
+            self.character_dict = None
+
         self.logger.info(f"Starting concurrent image generation for {len(scenes)} scenes")
 
         try:
@@ -137,7 +160,29 @@ class ImageGenerationAgent(BaseAgent):
             await self.rate_limiter.acquire()
 
         # 生成图片提示词
-        prompt = scene.to_image_prompt()
+        base_prompt = scene.to_image_prompt(self.character_dict)
+
+        # 使用一致性增强器增强提示词（如果可用）
+        enhanced_prompt = base_prompt
+        scene_seed = None
+
+        if self.character_enhancer and self.character_dict:
+            # 使用增强器进一步优化提示词
+            enhanced_prompt = self.character_enhancer.enhance_scene_prompt(
+                scene,
+                base_prompt,
+                self.character_dict
+            )
+
+            # 获取场景seed
+            if len(scene.characters) == 1:
+                # 单角色场景：使用角色专属seed
+                scene_seed = self.character_enhancer.get_character_seed(scene.characters[0])
+                self.logger.info(f"Using character seed {scene_seed} for {scene.characters[0]}")
+            elif len(scene.characters) > 1:
+                # 多角色场景：混合seed
+                scene_seed = self.character_enhancer.blend_character_seeds(scene.characters)
+                self.logger.info(f"Using blended seed {scene_seed} for multi-character scene")
 
         # 配置图片参数
         image_config = {
@@ -145,7 +190,10 @@ class ImageGenerationAgent(BaseAgent):
             'height': self.config.get('height', 1080),
             'quality': self.config.get('quality', 'high'),
             'style': scene.visual_style if scene.visual_style else None,
-            'negative_prompt': self.config.get('negative_prompt')
+            'negative_prompt': self.config.get('negative_prompt'),
+            'seed': scene_seed,
+            'cfg_scale': self.config.get('cfg_scale', 7.5),
+            'steps': self.config.get('steps', 50),
         }
 
         # 生成文件名
@@ -155,7 +203,7 @@ class ImageGenerationAgent(BaseAgent):
 
         # 调用服务生成并保存图片
         result = await self.service.generate_and_save(
-            prompt=prompt,
+            prompt=enhanced_prompt,
             save_path=save_path,
             **image_config
         )
@@ -163,7 +211,9 @@ class ImageGenerationAgent(BaseAgent):
         return {
             'scene_id': scene.scene_id,
             'image_path': result['image_path'],
-            'prompt': prompt,
+            'prompt': enhanced_prompt,
+            'original_prompt': base_prompt,
+            'seed': scene_seed,
             'config': image_config,
             'api_response': result.get('api_response')
         }

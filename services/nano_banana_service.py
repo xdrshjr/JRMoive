@@ -97,6 +97,9 @@ class NanoBananaService:
         quality: str = "high",
         style: Optional[str] = None,
         negative_prompt: Optional[str] = None,
+        seed: Optional[int] = None,
+        cfg_scale: Optional[float] = None,
+        steps: Optional[int] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -109,6 +112,9 @@ class NanoBananaService:
             quality: 质量（high/medium/low）
             style: 风格（可选）
             negative_prompt: 负面提示词
+            seed: 随机种子，用于确定性生成（可选）
+            cfg_scale: CFG引导强度，控制prompt遵循程度（可选）
+            steps: 推理步数，影响生成质量（可选）
             **kwargs: 其他API参数
 
         Returns:
@@ -132,6 +138,16 @@ class NanoBananaService:
 
         if negative_prompt:
             payload["negative_prompt"] = negative_prompt
+
+        # 一致性控制参数
+        if seed is not None:
+            payload["seed"] = seed
+
+        if cfg_scale is not None:
+            payload["cfg_scale"] = cfg_scale
+
+        if steps is not None:
+            payload["steps"] = steps
 
         self.logger.info(f"Generating image with prompt: {prompt[:50]}...")
         self.logger.debug(f"Using model: {self.model}")

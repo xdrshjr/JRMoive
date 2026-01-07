@@ -97,9 +97,12 @@ class Scene(BaseModel):
             raise ValueError("Scene duration must be between 1 and 10 seconds")
         return v
 
-    def to_image_prompt(self) -> str:
+    def to_image_prompt(self, character_dict: Optional[Dict[str, 'Character']] = None) -> str:
         """
         将场景转换为图片生成提示词
+
+        Args:
+            character_dict: 可选的角色字典，用于添加详细外貌描述
 
         Returns:
             适合AI图片生成的提示词
@@ -115,10 +118,35 @@ class Scene(BaseModel):
         if self.atmosphere:
             prompt_parts.append(f"{self.atmosphere} atmosphere")
 
-        # 角色和动作
+        # 角色和动作 - 增强版本
         if self.characters:
-            char_desc = ", ".join(self.characters)
-            prompt_parts.append(f"characters: {char_desc}")
+            if character_dict:
+                # 有角色字典：使用详细描述
+                char_descriptions = []
+                for char_name in self.characters:
+                    if char_name in character_dict:
+                        char = character_dict[char_name]
+                        desc_parts = [char_name]
+
+                        # 优先使用 appearance，其次 description
+                        if char.appearance:
+                            desc_parts.append(f"({char.appearance})")
+                        elif char.description:
+                            desc_parts.append(f"({char.description})")
+
+                        # 添加年龄和性别
+                        if char.age and char.gender:
+                            desc_parts.append(f"{char.age} years old {char.gender}")
+
+                        char_descriptions.append(" ".join(desc_parts))
+
+                if char_descriptions:
+                    prompt_parts.append("Characters: " + ", ".join(char_descriptions))
+            else:
+                # 无角色字典：仅使用名称（保持向后兼容）
+                char_desc = ", ".join(self.characters)
+                prompt_parts.append(f"characters: {char_desc}")
+
         if self.action:
             prompt_parts.append(self.action)
 

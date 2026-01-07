@@ -177,6 +177,14 @@ class DoubaoService:
                 image_data = reference_image
                 self.logger.info(f"Using provided base64 reference image")
 
+        # 豆包API不支持seed、cfg_scale、steps参数，从kwargs中移除这些参数
+        unsupported_params = ['seed', 'cfg_scale', 'steps']
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in unsupported_params}
+
+        if any(param in kwargs for param in unsupported_params):
+            removed = [p for p in unsupported_params if p in kwargs]
+            self.logger.debug(f"Removed unsupported Doubao API parameters: {removed}")
+
         # 构建请求 payload
         payload = {
             "model": self.model,
@@ -184,8 +192,7 @@ class DoubaoService:
             "size": f"{width}x{height}" if width == height else "2K",  # 豆包支持方形或2K
             "response_format": "url",  # 返回URL
             "stream": False,
-            "watermark": kwargs.get('watermark', True),
-            **kwargs
+            "watermark": filtered_kwargs.get('watermark', True)
         }
 
         # 图生图参数
@@ -195,21 +202,23 @@ class DoubaoService:
             payload["sequential_image_generation"] = "disabled"  # 禁用连续生成
             self.logger.info(f"Image-to-image mode enabled with reference weight {reference_image_weight}")
 
-        # 可选参数
+        # 可选参数 - 只添加豆包API实际支持的参数
         if style:
             payload["style"] = style
 
         if negative_prompt:
-            payload["negative_prompt"] = negative_prompt
+            self.logger.debug(f"Note: negative_prompt may not be supported by Doubao API")
+            # payload["negative_prompt"] = negative_prompt  # 暂时注释，可能不支持
 
+        # Note: seed, cfg_scale, steps are NOT supported by Doubao API
         if seed is not None:
-            payload["seed"] = seed
+            self.logger.debug(f"Ignoring seed parameter (not supported by Doubao API): {seed}")
 
         if cfg_scale is not None:
-            payload["cfg_scale"] = cfg_scale
+            self.logger.debug(f"Ignoring cfg_scale parameter (not supported by Doubao API): {cfg_scale}")
 
         if steps is not None:
-            payload["steps"] = steps
+            self.logger.debug(f"Ignoring steps parameter (not supported by Doubao API): {steps}")
 
         mode = "image-to-image" if image_data else "text-to-image"
         self.logger.info(f"Generating image ({mode}) with prompt: {prompt[:50]}...")

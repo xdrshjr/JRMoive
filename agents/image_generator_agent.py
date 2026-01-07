@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime
 
 from agents.base_agent import BaseAgent
-from services.nano_banana_service import NanoBananaService
+from services.image_service_factory import ImageServiceFactory
 from models.script_models import Scene, Character, Script
 from utils.concurrency import ConcurrencyLimiter, RateLimiter, TaskStats
 from utils.character_enhancer import CharacterDescriptionEnhancer
@@ -25,7 +25,8 @@ class ImageGenerationAgent(BaseAgent):
         self.output_dir = output_dir or Path("./output/images")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.service = NanoBananaService()
+        # 使用工厂创建服务
+        self.service = ImageServiceFactory.create_service()
         self.logger = logging.getLogger(__name__)
 
         # 并发控制
@@ -48,6 +49,10 @@ class ImageGenerationAgent(BaseAgent):
         # 一致性增强器（由外部设置）
         self.character_enhancer: Optional[CharacterDescriptionEnhancer] = None
         self.character_dict: Optional[Dict[str, Character]] = None
+
+        # 图生图配置
+        self.enable_image_to_image = self.config.get('enable_image_to_image', True)
+        self.reference_image_weight = self.config.get('reference_image_weight', 0.7)
 
     async def execute(self, scenes: List[Scene]) -> List[Dict[str, Any]]:
         """
@@ -145,7 +150,7 @@ class ImageGenerationAgent(BaseAgent):
 
     async def _generate_image_for_scene(self, scene: Scene) -> Dict[str, Any]:
         """
-        为单个场景生成图片
+        为单个场景生成图片（支持图生图）
 
         Args:
             scene: 场景对象
@@ -165,6 +170,7 @@ class ImageGenerationAgent(BaseAgent):
         # 使用一致性增强器增强提示词（如果可用）
         enhanced_prompt = base_prompt
         scene_seed = None
+        reference_image = None
 
         if self.character_enhancer and self.character_dict:
             # 使用增强器进一步优化提示词
@@ -179,10 +185,28 @@ class ImageGenerationAgent(BaseAgent):
                 # 单角色场景：使用角色专属seed
                 scene_seed = self.character_enhancer.get_character_seed(scene.characters[0])
                 self.logger.info(f"Using character seed {scene_seed} for {scene.characters[0]}")
+
+                # 获取角色参考图（用于图生图）
+                if self.enable_image_to_image:
+                    reference_image = self.character_enhancer.get_character_reference_image(scene.characters[0])
+                    if reference_image:
+                        self.logger.info(f"Using reference image for character: {scene.characters[0]}")
+                        # 在提示词中说明基于参考图生成
+                        enhanced_prompt = f"Based on the character in the reference image, {enhanced_prompt}"
+
             elif len(scene.characters) > 1:
                 # 多角色场景：混合seed
                 scene_seed = self.character_enhancer.blend_character_seeds(scene.characters)
                 self.logger.info(f"Using blended seed {scene_seed} for multi-character scene")
+
+                # 多角色场景：尝试获取主要角色的参考图
+                if self.enable_image_to_image:
+                    # 使用第一个角色的参考图
+                    reference_image = self.character_enhancer.get_character_reference_image(scene.characters[0])
+                    if reference_image:
+                        self.logger.info(f"Using reference image for primary character: {scene.characters[0]}")
+                        # 在提示词中说明基于参考图生成多角色场景
+                        enhanced_prompt = f"Based on the characters in the reference image, {enhanced_prompt}"
 
         # 配置图片参数
         image_config = {
@@ -195,6 +219,16 @@ class ImageGenerationAgent(BaseAgent):
             'cfg_scale': self.config.get('cfg_scale', 7.5),
             'steps': self.config.get('steps', 50),
         }
+
+        # 图生图参数
+        if reference_image and self.enable_image_to_image:
+            # 检查服务是否支持图生图
+            if ImageServiceFactory.supports_image_to_image():
+                image_config['reference_image'] = reference_image
+                image_config['reference_image_weight'] = self.reference_image_weight
+                self.logger.info(f"Image-to-image enabled with weight {self.reference_image_weight}")
+            else:
+                self.logger.warning(f"Current service does not support image-to-image, falling back to text-to-image")
 
         # 生成文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -214,6 +248,7 @@ class ImageGenerationAgent(BaseAgent):
             'prompt': enhanced_prompt,
             'original_prompt': base_prompt,
             'seed': scene_seed,
+            'reference_image': reference_image,
             'config': image_config,
             'api_response': result.get('api_response')
         }

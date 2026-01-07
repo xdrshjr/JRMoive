@@ -247,3 +247,32 @@ class CharacterDescriptionEnhancer:
         if self.has_reference(character_name):
             return self.reference_data[character_name]
         return None
+
+    def get_character_reference_image(self, character_name: str) -> Optional[str]:
+        """
+        获取角色的主参考图路径（用于图生图）
+
+        Args:
+            character_name: 角色名称
+
+        Returns:
+            参考图路径，如果不存在则返回None
+        """
+        if character_name in self.reference_data:
+            ref_data = self.reference_data[character_name]
+
+            # 优先使用 reference_image 字段（单张多视角模式）
+            if 'reference_image' in ref_data and ref_data['reference_image']:
+                return ref_data['reference_image']
+
+            # 后备：使用 front_view（多张单视角模式）
+            if 'front_view' in ref_data and ref_data['front_view']:
+                return ref_data['front_view']
+
+            # 再后备：使用任何可用的视图
+            for view_name in ['side_view', 'close_up', 'full_body']:
+                if view_name in ref_data and ref_data[view_name]:
+                    self.logger.warning(f"Using {view_name} as reference image for {character_name}")
+                    return ref_data[view_name]
+
+        return None

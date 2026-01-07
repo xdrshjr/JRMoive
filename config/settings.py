@@ -1,10 +1,19 @@
 """Configuration management module"""
 from pydantic_settings import BaseSettings
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 
 class Settings(BaseSettings):
     """应用配置"""
+
+    # 图片生成服务选择 (默认使用豆包)
+    image_service_type: Literal["doubao", "nano_banana"] = "doubao"
+
+    # Doubao (豆包) 配置
+    doubao_api_key: str = ""
+    doubao_base_url: str = "https://ark.cn-beijing.volces.com"
+    doubao_endpoint: str = "/api/v3/images/generations"
+    doubao_model: str = "doubao-seedream-4-5-251128"
 
     # Nano Banana Pro配置
     nano_banana_api_key: str = ""
@@ -20,6 +29,15 @@ class Settings(BaseSettings):
     veo3_upload_endpoint: Optional[str] = None  # OpenAI 格式不需要单独上传
     veo3_skip_upload: bool = True  # OpenAI 格式使用 multipart，无需单独上传
 
+    # Midjourney配置
+    midjourney_api_key: str = ""
+    midjourney_base_url: str = "https://api.kuai.host"
+    midjourney_bot_type: str = "MID_JOURNEY"  # MID_JOURNEY 或 NIJI_JOURNEY
+    midjourney_poll_interval: float = 3.0  # 轮询间隔（秒）
+    midjourney_max_poll_attempts: int = 100  # 最大轮询次数
+    midjourney_auto_upscale: bool = False  # 是否自动upscale获取单张图
+    midjourney_upscale_index: int = 1  # 选择upscale哪一张1-4
+
     # 应用配置
     output_dir: str = "./output"
     temp_dir: str = "./temp"
@@ -28,19 +46,24 @@ class Settings(BaseSettings):
 
     # 角色一致性配置
     enable_character_references: bool = True  # 是否启用角色参考图生成
+    character_reference_mode: Literal["single_multi_view", "multiple_single_view"] = "single_multi_view"  # 单张多视角 or 多张单视角
     reference_views: List[str] = [  # 要生成的参考视图列表
         "front_view",
         "side_view",
         "close_up",
         "full_body"
     ]
+    max_reference_images: int = 4  # 最大参考图数量
     reference_image_size: int = 1024  # 参考图尺寸（像素）
     reference_cfg_scale: float = 8.0  # 参考图生成的CFG引导强度
     reference_steps: int = 60  # 参考图生成的推理步数
+    character_art_style: Literal["realistic", "anime", "semi_realistic"] = "realistic"  # 角色风格：realistic(写实), anime(动漫), semi_realistic(半写实)
 
     # 场景图片一致性配置
+    enable_image_to_image: bool = True  # 是否启用图生图（基于角色参考图）
     scene_cfg_scale: float = 7.5  # 场景图生成的CFG引导强度
     scene_steps: int = 50  # 场景图生成的推理步数
+    reference_image_weight: float = 0.7  # 参考图权重 (0.0-1.0)，控制对参考图的遵循程度
 
     # 可选配置
     openai_api_key: Optional[str] = None

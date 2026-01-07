@@ -12,6 +12,7 @@ from agents.image_generator_agent import ImageGenerationAgent
 from agents.video_generator_agent import VideoGenerationAgent
 from agents.video_composer_agent import VideoComposerAgent
 from models.script_models import Script
+from config.settings import settings
 import logging
 import json
 from datetime import datetime
@@ -28,17 +29,33 @@ class DramaGenerationOrchestrator(BaseAgent):
         super().__init__(agent_id, config or {})
         self.logger = logging.getLogger(__name__)
 
+        # 构建角色参考配置（合并settings和config）
+        character_reference_config = {
+            'character_reference_mode': settings.character_reference_mode,
+            'reference_views': settings.reference_views,
+            'reference_image_size': settings.reference_image_size,
+            'reference_cfg_scale': settings.reference_cfg_scale,
+            'reference_steps': settings.reference_steps,
+            'character_art_style': settings.character_art_style,
+            'max_reference_images': settings.max_reference_images,
+        }
+        # 允许config覆盖settings
+        character_reference_config.update(self.config.get('character_reference', {}))
+
         # 初始化子Agent
         self.script_parser = ScriptParserAgent()
         self.character_reference_agent = CharacterReferenceAgent(
-            config=config.get('character_reference', {})
+            config=character_reference_config
         )
-        self.image_generator = ImageGenerationAgent(config=config.get('image', {}))
-        self.video_generator = VideoGenerationAgent(config=config.get('video', {}))
-        self.video_composer = VideoComposerAgent(config=config.get('composer', {}))
+        self.image_generator = ImageGenerationAgent(config=self.config.get('image', {}))
+        self.video_generator = VideoGenerationAgent(config=self.config.get('video', {}))
+        self.video_composer = VideoComposerAgent(config=self.config.get('composer', {}))
 
         # 一致性控制开关
-        self.enable_character_references = config.get('enable_character_references', True)
+        self.enable_character_references = self.config.get(
+            'enable_character_references',
+            settings.enable_character_references
+        )
 
         # 进度回调
         self.progress_callback: Optional[Callable] = None

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /b)",
+      "Bash(tree -L 2 -I '.claude')",
+      "Bash(python init_project.py)",
+      "Bash(python tests/test_agents/test_script_parser.py)",
+      "Bash(python tests/test_agents/test_script_parser_simple.py)",
+      "Bash(python -m pytest tests/test_agents/test_image_video_generation.py -v --tb=short)",
+      "Bash(python -m pytest tests/test_agents/test_image_video_generation.py::TestConcurrencyUtilities -v --tb=short)",
+      "Bash(python -m pytest tests/test_agents/test_image_video_generation.py::TestRetryDecorator -v --tb=short)",
+      "Bash(python -c \"from agents.image_generator_agent import ImageGenerationAgent; from agents.video_generator_agent import VideoGenerationAgent; from services.nano_banana_service import NanoBananaService; from services.veo3_service import Veo3Service; print\\(''All imports successful!''\\)\")",
+      "Bash(dir /b examples)",
+      "Bash(python -c \"import sys; print\\(f''Python version: {sys.version}''\\)\")",
+      "Bash(findstr -i \"moviepy pydantic httpx aiohttp\")",
+      "Bash(python -c \"from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip; print\\(''All imports successful!''\\)\")",
+      "Bash(python -c \"import moviepy; print\\(dir\\(moviepy\\)\\)\")",
+      "Bash(python -c \"from moviepy import VideoFileClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip, TextClip; from moviepy import vfx; print\\(''All imports successful!''\\)\")",
+      "Bash(python:*)",
+      "WebSearch",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n[feat] add character reference system for multi-scene consistency\n\nImplement character reference sheet generation to ensure consistent character appearance across multiple scenes:\n- Add CharacterReferenceAgent to generate multi-view character references \\(front, side, close-up, full-body\\)\n- Add CharacterDescriptionEnhancer for prompt enhancement with character details\n- Enhance NanoBananaService with seed/cfg_scale/steps parameters for consistency control\n- Update Scene.to_image_prompt\\(\\) to support character dictionary with detailed appearances\n- Integrate consistency enhancer into ImageGenerationAgent workflow\n- Add character reference generation stage to DramaGenerationOrchestrator \\(5-15% progress\\)\n- Add ReferenceSheetComposer utility for compositing reference images\n- Add consistency configuration options to settings\n- Add comprehensive unit tests \\(14 tests, all passing\\)\n\nExpected improvement: 85-90% character consistency across scenes\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(findstr:*)",
+      "Bash(test -f .env)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}

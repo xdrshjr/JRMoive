@@ -63,7 +63,7 @@ class Veo3Service:
     async def image_to_video(
         self,
         image_path: str,
-        duration: float = 3.0,
+        duration: Optional[float] = None,
         fps: int = 30,
         resolution: str = "1920x1080",
         motion_strength: float = 0.5,
@@ -75,7 +75,7 @@ class Veo3Service:
 
         Args:
             image_path: 图片文件路径
-            duration: 视频时长（秒）
+            duration: 视频时长（秒，可选，默认None让模型自动决定）
             fps: 帧率
             resolution: 分辨率
             motion_strength: 运动强度（0.0-1.0）
@@ -99,10 +99,13 @@ class Veo3Service:
             data = {
                 'model': self.model,
                 'prompt': kwargs.get('prompt', 'Generate video from this image'),
-                'seconds': str(int(duration)),  # 必须是整数字符串
                 'size': kwargs.get('size', '1920x1080'),  # 使用实际分辨率而不是宽高比
                 'watermark': 'false'  # 字符串格式的布尔值
             }
+
+            # 只有在明确指定duration时才添加，否则让视频模型自己决定
+            if duration is not None:
+                data['seconds'] = str(int(duration))  # 必须是整数字符串
 
             self.logger.debug(f"Using model: {self.model}")
             self.logger.debug(f"Form data: {data}")

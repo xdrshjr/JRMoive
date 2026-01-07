@@ -45,36 +45,63 @@ class CharacterReferenceAgent(BaseAgent):
         self.reference_steps = self.config.get('reference_steps', 60)
         self.art_style = self.config.get('character_art_style', 'realistic')
 
-    async def execute(self, characters: List[Character]) -> Dict[str, Dict[str, Any]]:
+    async def execute(
+        self,
+        characters: List[Character],
+        character_images: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Dict[str, Any]]:
         """
-        为角色列表生成参考图集
+        为角色列表生成参考图集或加载已有参考图
 
         Args:
             characters: 角色列表
+            character_images: 角色图片配置字典 (可选)
+                格式: {
+                    "character_name": {
+                        "mode": "load" | "generate",
+                        "images": [paths],  # for mode=load
+                        "views": [views]     # for mode=generate
+                    }
+                }
 
         Returns:
-            角色参考数据字典: {character_name: {view_name: image_path, seed: int}}
+            角色参考数据字典: {character_name: {mode: str, reference_image: path, ...}}
         """
         if not await self.validate_input(characters):
             raise ValueError("Invalid characters data")
 
-        self.logger.info(f"Starting reference generation for {len(characters)} characters")
+        self.logger.info(f"Starting reference processing for {len(characters)} characters")
 
         reference_data = {}
 
         for character in characters:
-            self.logger.info(f"Generating references for character: {character.name}")
+            char_config = character_images.get(character.name, {}) if character_images else {}
+            mode = char_config.get('mode', 'generate')
+
+            self.logger.info(f"Processing character '{character.name}' with mode='{mode}'")
 
             try:
-                views = await self._generate_character_views(character)
+                if mode == 'load':
+                    # 加载已有图片
+                    views = await self._load_character_images(character, char_config)
+                    self.logger.info(f"Successfully loaded {len(char_config.get('images', []))} images for {character.name}")
+                else:
+                    # 生成新参考图
+                    custom_views = char_config.get('views')
+                    views = await self._generate_character_views(character, custom_views)
+                    self.logger.info(f"Successfully generated references for {character.name}")
+
                 reference_data[character.name] = views
-                self.logger.info(f"Successfully generated {len(views)-1} views for {character.name}")
 
             except Exception as e:
-                self.logger.error(f"Failed to generate references for {character.name}: {e}")
+                self.logger.error(f"Failed to process references for {character.name}: {e}")
                 await self.on_error(e)
                 # 继续处理其他角色，不中断整个流程
-                reference_data[character.name] = {'error': str(e)}
+                reference_data[character.name] = {
+                    'mode': mode,
+                    'error': str(e),
+                    'reference_image': None
+                }
 
         await self.on_complete(reference_data)
         return reference_data
@@ -91,12 +118,57 @@ class CharacterReferenceAgent(BaseAgent):
 
         return True
 
-    async def _generate_character_views(self, character: Character) -> Dict[str, Any]:
+    async def _load_character_images(
+        self,
+        character: Character,
+        char_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        加载已有的角色参考图片
+
+        Args:
+            character: 角色对象
+            char_config: 角色配置，包含images列表
+
+        Returns:
+            视图数据字典: {mode: 'loaded', reference_image: path, images: [paths]}
+        """
+        images = char_config.get('images', [])
+
+        if not images:
+            raise ValueError(f"No images specified for character '{character.name}' in load mode")
+
+        # 验证所有图片文件存在
+        missing_images = []
+        for image_path in images:
+            if not Path(image_path).exists():
+                missing_images.append(image_path)
+
+        if missing_images:
+            raise FileNotFoundError(
+                f"Character '{character.name}': image files not found: {', '.join(missing_images)}"
+            )
+
+        self.logger.info(f"Loaded {len(images)} images for character '{character.name}'")
+
+        return {
+            'mode': 'loaded',
+            'reference_image': images[0],  # 使用第一张作为主参考图
+            'images': images,
+            'character_name': character.name
+        }
+
+    async def _generate_character_views(
+        self,
+        character: Character,
+        custom_views: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """
         为单个角色生成参考图（单张多视角 或 多张单视角）
 
         Args:
             character: 角色对象
+            custom_views: 自定义视图列表（可选，仅用于multiple_single_view模式）
 
         Returns:
             视图数据字典: {view_name: image_path, 'seed': int, 'reference_image': main_image_path}
@@ -109,7 +181,8 @@ class CharacterReferenceAgent(BaseAgent):
             return await self._generate_single_multi_view(character, char_seed)
         else:
             # 多张单视角模式（原有逻辑）
-            return await self._generate_multiple_single_views(character, char_seed)
+            views_to_generate = custom_views or self.reference_views
+            return await self._generate_multiple_single_views(character, char_seed, views_to_generate)
 
     async def _generate_single_multi_view(self, character: Character, char_seed: int) -> Dict[str, Any]:
         """
@@ -175,13 +248,19 @@ class CharacterReferenceAgent(BaseAgent):
                 'error': str(e)
             }
 
-    async def _generate_multiple_single_views(self, character: Character, char_seed: int) -> Dict[str, Any]:
+    async def _generate_multiple_single_views(
+        self,
+        character: Character,
+        char_seed: int,
+        views_to_generate: List[str]
+    ) -> Dict[str, Any]:
         """
         生成多张单视角参考图（原有逻辑）
 
         Args:
             character: 角色对象
             char_seed: 角色专用seed
+            views_to_generate: 要生成的视图列表
 
         Returns:
             视图数据字典: {view_name: image_path, 'seed': int}
@@ -206,8 +285,8 @@ class CharacterReferenceAgent(BaseAgent):
             'full_body': f"{base_prompt}, full body view, standing pose, {background_style}"
         }
 
-        # 只生成配置中指定的视图
-        for view_name in self.reference_views:
+        # 只生成指定的视图
+        for view_name in views_to_generate:
             if view_name not in view_prompts:
                 self.logger.warning(f"Unknown view type: {view_name}, skipping")
                 continue

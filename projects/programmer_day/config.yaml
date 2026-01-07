@@ -1,0 +1,94 @@
+# 程序员的一天 - AI短剧生成项目配置
+
+# ==================== 项目元信息 ====================
+project:
+  name: "programmer_day"
+  description: "讲述一个年轻程序员日常工作的温馨故事"
+  author: "AI编剧"
+  version: "1.0"
+
+# ==================== 剧本配置 ====================
+script:
+  file: "script.txt"
+  encoding: "utf-8"
+
+# ==================== 角色配置 ====================
+characters:
+  # 启用角色参考图生成，确保角色在不同场景中保持一致
+  enable_references: true
+
+  # 参考图生成模式
+  reference_mode: "single_multi_view"
+
+  # 艺术风格
+  art_style: "realistic"
+
+  # 本项目使用自动生成模式，不需要预先准备角色图片
+  # 如果想使用已有的角色图片，可以取消下面的注释并配置：
+  # reference_images:
+  #   小明:
+  #     mode: "load"
+  #     images:
+  #       - "characters/xiaoming_front.png"
+  #   小红:
+  #     mode: "generate"
+
+# ==================== 图像生成 ====================
+image:
+  service: "doubao"  # 使用豆包服务
+  max_concurrent: 3
+  width: 1920
+  height: 1080
+  quality: "high"
+  cfg_scale: 7.5
+  steps: 50
+  enable_image_to_image: true
+  reference_weight: 0.7
+
+# ==================== 视频生成 ====================
+video:
+  service: "veo3"
+  max_concurrent: 2
+  fps: 30
+  resolution: "1920x1080"
+  motion_strength: 0.6
+  model: "veo_3_1"
+
+# ==================== 视频合成 ====================
+composer:
+  add_transitions: true
+  transition_type: "fade"
+  transition_duration: 0.5
+  fps: 30
+  preset: "medium"
+  threads: 4
+
+  # 背景音乐（未启用）
+  bgm:
+    enabled: false
+    file: null
+    volume: 0.3
+
+  # 字幕（未启用）
+  subtitles:
+    enabled: false
+
+# ==================== 输出配置 ====================
+output:
+  directory: "outputs"
+  filename: "programmer_day.mp4"
+  save_intermediate: true
+  metadata:
+    enabled: true
+    format: "json"
+
+# ==================== 性能配置 ====================
+performance:
+  max_concurrent_requests: 5
+  enable_checkpoints: true
+
+# ==================== 日志配置 ====================
+logging:
+  level: "INFO"
+  save_to_file: true
+  file: "outputs/generation.log"

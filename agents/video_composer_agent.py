@@ -12,6 +12,7 @@ from moviepy import (
     AudioFileClip,
     TextClip
 )
+from moviepy.video.fx import FadeIn, FadeOut
 from utils.video_utils import FFmpegProcessor
 import logging
 
@@ -158,7 +159,7 @@ class VideoComposerAgent(BaseAgent):
 
         for clip in clips:
             # 添加淡入淡出
-            clip = clip.fadein(duration).fadeout(duration)
+            clip = clip.with_effects([FadeIn(duration), FadeOut(duration)])
             processed.append(clip)
 
         return processed
@@ -172,14 +173,14 @@ class VideoComposerAgent(BaseAgent):
         if len(clips) <= 1:
             return clips
 
-        processed = [clips[0].fadein(duration)]
+        processed = [clips[0].with_effects([FadeIn(duration)])]
 
         for i in range(1, len(clips)):
             # 当前片段淡入，前一片段会淡出
-            clip = clips[i].fadein(duration)
+            clip = clips[i].with_effects([FadeIn(duration)])
             processed.append(clip)
 
-        processed[-1] = processed[-1].fadeout(duration)
+        processed[-1] = processed[-1].with_effects([FadeOut(duration)])
 
         return processed
 

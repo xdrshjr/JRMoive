@@ -24,10 +24,24 @@ class DramaGenerationOrchestrator(BaseAgent):
     def __init__(
         self,
         agent_id: str = "orchestrator",
-        config: Dict[str, Any] = None
+        config: Dict[str, Any] = None,
+        output_dir: Optional[Path] = None
     ):
         super().__init__(agent_id, config or {})
         self.logger = logging.getLogger(__name__)
+
+        # 设置输出目录（如果提供）
+        self.output_dir = output_dir or Path("./output")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 设置项目特定日志
+        self._setup_logging()
+
+        # 构建各子目录路径
+        char_ref_dir = self.output_dir / "character_references"
+        images_dir = self.output_dir / "images"
+        videos_dir = self.output_dir / "videos"
+        final_dir = self.output_dir / "final"
 
         # 构建角色参考配置（合并settings和config）
         character_reference_config = {
@@ -42,14 +56,24 @@ class DramaGenerationOrchestrator(BaseAgent):
         # 允许config覆盖settings
         character_reference_config.update(self.config.get('character_reference', {}))
 
-        # 初始化子Agent
+        # 初始化子Agent，传递输出目录
         self.script_parser = ScriptParserAgent()
         self.character_reference_agent = CharacterReferenceAgent(
-            config=character_reference_config
+            config=character_reference_config,
+            output_dir=char_ref_dir
         )
-        self.image_generator = ImageGenerationAgent(config=self.config.get('image', {}))
-        self.video_generator = VideoGenerationAgent(config=self.config.get('video', {}))
-        self.video_composer = VideoComposerAgent(config=self.config.get('composer', {}))
+        self.image_generator = ImageGenerationAgent(
+            config=self.config.get('image', {}),
+            output_dir=images_dir
+        )
+        self.video_generator = VideoGenerationAgent(
+            config=self.config.get('video', {}),
+            output_dir=videos_dir
+        )
+        self.video_composer = VideoComposerAgent(
+            config=self.config.get('composer', {}),
+            output_dir=final_dir
+        )
 
         # 一致性控制开关
         self.enable_character_references = self.config.get(
@@ -68,7 +92,8 @@ class DramaGenerationOrchestrator(BaseAgent):
         self,
         script_text: str,
         output_filename: str = "drama.mp4",
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        character_images: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         执行完整的短剧生成流程
@@ -77,6 +102,8 @@ class DramaGenerationOrchestrator(BaseAgent):
             script_text: 剧本文本
             output_filename: 输出文件名
             progress_callback: 进度回调函数
+            character_images: 角色图片配置字典（可选）
+                格式: {character_name: {mode: "load"|"generate", images: [...], views: [...]}}
 
         Returns:
             最终视频文件路径
@@ -99,15 +126,32 @@ class DramaGenerationOrchestrator(BaseAgent):
                 + (f", {script.total_duration:.1f}s duration" if script.total_duration else "")
             )
 
-            # 步骤2：生成角色参考图 (5% -> 15%)
+            # 步骤2：生成或加载角色参考图 (5% -> 15%)
             reference_data = None
             if self.enable_character_references and script.characters:
-                await self._update_progress(5, "Generating character reference sheets...")
+                if character_images:
+                    # 检查是否有需要加载的图片
+                    load_count = sum(
+                        1 for cfg in character_images.values()
+                        if cfg.get('mode') == 'load'
+                    )
+                    if load_count > 0:
+                        await self._update_progress(
+                            5, f"Processing character references ({load_count} load, "
+                            f"{len(character_images) - load_count} generate)..."
+                        )
+                    else:
+                        await self._update_progress(5, "Generating character reference sheets...")
+                else:
+                    await self._update_progress(5, "Generating character reference sheets...")
 
                 try:
-                    reference_data = await self.character_reference_agent.execute(script.characters)
+                    reference_data = await self.character_reference_agent.execute(
+                        script.characters,
+                        character_images=character_images
+                    )
 
-                    # 统计成功生成的参考图数量
+                    # 统计成功生成/加载的参考图数量
                     success_count = sum(
                         1 for char_data in reference_data.values()
                         if 'error' not in char_data
@@ -115,11 +159,11 @@ class DramaGenerationOrchestrator(BaseAgent):
 
                     await self._update_progress(
                         15,
-                        f"Generated references for {success_count}/{len(script.characters)} characters"
+                        f"Processed references for {success_count}/{len(script.characters)} characters"
                     )
 
                 except Exception as e:
-                    self.logger.warning(f"Character reference generation failed: {e}")
+                    self.logger.warning(f"Character reference processing failed: {e}")
                     self.logger.warning("Continuing with prompt-only enhancement")
                     reference_data = None
                     await self._update_progress(15, "Skipped character references (using prompt enhancement)")
@@ -197,6 +241,54 @@ class DramaGenerationOrchestrator(BaseAgent):
             return False
 
         return True
+
+    def _setup_logging(self):
+        """
+        设置项目特定日志配置
+
+        根据config中的log_file和log_level配置日志处理器
+        """
+        log_file = self.config.get('log_file')
+        log_level = self.config.get('log_level', 'INFO')
+
+        if not log_file:
+            # 如果未指定日志文件，使用默认路径
+            log_file = self.output_dir / "generation.log"
+        else:
+            log_file = Path(log_file)
+
+        # 确保日志文件的父目录存在
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # 配置根日志记录器
+        root_logger = logging.getLogger()
+
+        # 设置日志级别
+        numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+        root_logger.setLevel(numeric_level)
+
+        # 检查是否已经存在文件处理器（避免重复添加）
+        has_file_handler = any(
+            isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file.absolute())
+            for h in root_logger.handlers
+        )
+
+        if not has_file_handler:
+            # 创建文件处理器
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+            file_handler.setLevel(numeric_level)
+
+            # 设置格式
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            )
+            file_handler.setFormatter(formatter)
+
+            # 添加到根记录器
+            root_logger.addHandler(file_handler)
+
+            self.logger.info(f"Logging configured: level={log_level}, file={log_file}")
 
     async def _update_progress(self, percent: float, message: str):
         """

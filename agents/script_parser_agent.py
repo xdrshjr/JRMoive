@@ -188,7 +188,7 @@ class ScriptParserAgent(BaseAgent):
 
             # 提取镜头参数
             duration_str = self._extract_field(content, r'时长[:：]\s*([\d.]+)')
-            duration = float(duration_str) if duration_str else 3.0
+            duration = float(duration_str) if duration_str else None
 
             shot_type_str = self._extract_field(content, r'镜头[:：]\s*(.+)')
             shot_type = self._parse_shot_type(shot_type_str)
@@ -201,6 +201,12 @@ class ScriptParserAgent(BaseAgent):
 
             # 提取对话
             dialogues = self._extract_dialogues(content)
+
+            # 提取旁白
+            narrations = self._extract_narrations(content)
+
+            # 提取音效
+            sound_effects = self._extract_sound_effects(content)
 
             # 提取动作
             action = self._extract_field(content, r'动作[:：]\s*(.+)')
@@ -220,6 +226,8 @@ class ScriptParserAgent(BaseAgent):
                 duration=duration,
                 characters=characters,
                 dialogues=dialogues,
+                narrations=narrations,
+                sound_effects=sound_effects,
                 action=action,
                 visual_style=visual_style,
                 color_tone=color_tone
@@ -236,30 +244,112 @@ class ScriptParserAgent(BaseAgent):
 
     def _extract_dialogues(self, content: str) -> List[Dialogue]:
         """
-        提取对话
+        提取对话（增强版）
 
-        格式: 角色名（情绪）：对话内容
+        支持格式:
+        1. 基础格式: 角色名：对话内容
+        2. 带情绪: 角色名（情绪）：对话内容
+        3. 带情绪和语音风格: 角色名（情绪|语音风格）：对话内容
+        4. 多行对话: 角色名（情绪）：对话1\n对话2
         """
         dialogues = []
         dialogue_pattern = r'([^（\(]+)(?:[（\(]([^）\)]+)[）\)])?[:：]\s*(.+)'
 
         for line in content.split('\n'):
             line = line.strip()
-            match = re.match(dialogue_pattern, line)
 
-            if match and not any(keyword in line for keyword in
-                                ['地点', '时间', '天气', '氛围', '描述', '镜头', '时长', '运镜', '风格', '色调', '动作']):
+            # 跳过字段标记行
+            if any(keyword in line for keyword in
+                   ['地点', '时间', '天气', '氛围', '描述', '镜头', '时长', '运镜', '风格', '色调', '动作']):
+                continue
+
+            # 跳过旁白和音效行（支持带参数的格式）
+            if line.startswith('[旁白') or line.startswith('[音效'):
+                continue
+
+            match = re.match(dialogue_pattern, line)
+            if match:
                 character = match.group(1).strip()
-                emotion = match.group(2).strip() if match.group(2) else None
+                emotion_voice = match.group(2).strip() if match.group(2) else None
                 content_text = match.group(3).strip()
+
+                # 解析 emotion 和 voice_style
+                emotion = None
+                voice_style = None
+                if emotion_voice:
+                    if '|' in emotion_voice:
+                        # 支持 "情绪|语音风格" 格式
+                        parts = emotion_voice.split('|')
+                        emotion = parts[0].strip()
+                        voice_style = parts[1].strip() if len(parts) > 1 else None
+                    else:
+                        # 仅有情绪
+                        emotion = emotion_voice
+
+                # 处理多行对话（\n 分隔）
+                if '\\n' in content_text:
+                    content_text = content_text.replace('\\n', '\n')
 
                 dialogues.append(Dialogue(
                     character=character,
                     content=content_text,
-                    emotion=emotion
+                    emotion=emotion,
+                    voice_style=voice_style
                 ))
 
         return dialogues
+
+    def _extract_narrations(self, content: str) -> List['Narration']:
+        """
+        提取旁白
+
+        格式: [旁白]：内容
+        或    [旁白|语音风格]：内容
+        """
+        from models.script_models import Narration
+
+        narrations = []
+        narration_pattern = r'\[旁白(?:\|([^\]]+))?\][:：]\s*(.+)'
+
+        for line in content.split('\n'):
+            match = re.match(narration_pattern, line.strip())
+            if match:
+                voice_style = match.group(1).strip() if match.group(1) else None
+                narration_content = match.group(2).strip()
+
+                narrations.append(Narration(
+                    content=narration_content,
+                    voice_style=voice_style
+                ))
+
+        return narrations
+
+    def _extract_sound_effects(self, content: str) -> List['SoundEffect']:
+        """
+        提取音效标记
+
+        格式: [音效：描述]
+        或    [音效@时间点：描述]  # 例如 [音效@1.5：键盘声]
+        """
+        from models.script_models import SoundEffect
+
+        effects = []
+        effect_pattern = r'\[音效(?:@([\d.]+))?[:：]\s*([^\]]+)\]'
+
+        for line in content.split('\n'):
+            match = re.search(effect_pattern, line.strip())
+            if match:
+                timing_str = match.group(1)
+                description = match.group(2).strip()
+
+                timing = float(timing_str) if timing_str else None
+
+                effects.append(SoundEffect(
+                    description=description,
+                    timing=timing
+                ))
+
+        return effects
 
     def _parse_shot_type(self, shot_str: Optional[str]) -> ShotType:
         """解析镜头类型"""

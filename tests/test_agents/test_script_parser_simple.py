@@ -101,16 +101,23 @@ async def test_script_parser():
 
         # 测试时长调整
         print("\n测试时长调整:")
-        print(f"  当前总时长: {sum(s.duration for s in script.scenes)}秒")
+        scenes_with_duration = [s for s in script.scenes if s.duration is not None]
+        if scenes_with_duration:
+            current_total = sum(s.duration for s in scenes_with_duration)
+            print(f"  当前总时长: {current_total}秒")
 
-        target_duration = 25.0
-        adjusted_scenes = StoryboardOptimizer.adjust_scene_durations(
-            script.scenes.copy(),
-            target_duration
-        )
+            target_duration = 25.0
+            adjusted_scenes = StoryboardOptimizer.adjust_scene_durations(
+                script.scenes.copy(),
+                target_duration
+            )
 
-        print(f"  目标总时长: {target_duration}秒")
-        print(f"  调整后总时长: {sum(s.duration for s in adjusted_scenes):.2f}秒")
+            print(f"  目标总时长: {target_duration}秒")
+            adjusted_with_duration = [s for s in adjusted_scenes if s.duration is not None]
+            if adjusted_with_duration:
+                print(f"  调整后总时长: {sum(s.duration for s in adjusted_with_duration):.2f}秒")
+        else:
+            print("  场景未指定时长，跳过时长调整测试")
 
         # 测试摄像机动态
         print("\n测试摄像机动态:")

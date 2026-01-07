@@ -95,8 +95,8 @@ class DramaGenerationOrchestrator(BaseAgent):
             await self._update_progress(
                 5,
                 f"Script parsed: {script.total_scenes} scenes, "
-                f"{len(script.characters)} characters, "
-                f"{script.total_duration:.1f}s duration"
+                f"{len(script.characters)} characters"
+                + (f", {script.total_duration:.1f}s duration" if script.total_duration else "")
             )
 
             # 步骤2：生成角色参考图 (5% -> 15%)
@@ -144,9 +144,13 @@ class DramaGenerationOrchestrator(BaseAgent):
             # 步骤4：生成视频片段 (45% -> 75%)
             await self._update_progress(45, "Converting images to videos...")
 
+            # 构建角色字典，用于生成视频提示词
+            character_dict = {char.name: char for char in script.characters}
+
             video_results = await self.video_generator.execute(
                 image_results,
-                script.scenes
+                script.scenes,
+                character_dict=character_dict
             )
 
             await self._update_progress(

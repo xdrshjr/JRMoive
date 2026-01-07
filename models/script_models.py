@@ -66,6 +66,36 @@ class Dialogue(BaseModel):
     }
 
 
+class Narration(BaseModel):
+    """旁白模型"""
+    content: str = Field(..., description="旁白内容")
+    voice_style: Optional[str] = Field(None, description="旁白语音风格（用于未来TTS扩展）")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "content": "时间来到了深夜，办公室里只剩下小明一个人。",
+                "voice_style": "calm"
+            }
+        }
+    }
+
+
+class SoundEffect(BaseModel):
+    """音效模型"""
+    description: str = Field(..., description="音效描述")
+    timing: Optional[float] = Field(None, description="在场景中的时间点（秒）")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "description": "键盘敲击声",
+                "timing": 1.5
+            }
+        }
+    }
+
+
 class Scene(BaseModel):
     """场景模型"""
     scene_id: str = Field(..., description="场景唯一标识符")
@@ -78,11 +108,13 @@ class Scene(BaseModel):
     # 分镜参数
     shot_type: ShotType = Field(default=ShotType.MEDIUM_SHOT, description="镜头类型")
     camera_movement: CameraMovement = Field(default=CameraMovement.STATIC, description="摄像机运动")
-    duration: float = Field(default=3.0, ge=1.0, le=10.0, description="时长（秒）")
+    duration: Optional[float] = Field(default=None, description="时长（秒，可选，由视频生成模型决定）")
 
     # 内容
     characters: List[str] = Field(default_factory=list, description="出现的角色")
     dialogues: List[Dialogue] = Field(default_factory=list, description="对话列表")
+    narrations: List[Narration] = Field(default_factory=list, description="旁白列表")
+    sound_effects: List[SoundEffect] = Field(default_factory=list, description="音效列表")
     action: Optional[str] = Field(None, description="动作描述")
 
     # 视觉风格
@@ -92,8 +124,8 @@ class Scene(BaseModel):
     @field_validator('duration')
     @classmethod
     def validate_duration(cls, v):
-        """验证时长合法性"""
-        if v < 1.0 or v > 10.0:
+        """验证时长合法性（如果提供）"""
+        if v is not None and (v < 1.0 or v > 10.0):
             raise ValueError("Scene duration must be between 1 and 10 seconds")
         return v
 
@@ -164,6 +196,80 @@ class Scene(BaseModel):
 
         return ", ".join(prompt_parts)
 
+    def to_video_prompt(self, character_dict: Optional[Dict[str, 'Character']] = None) -> str:
+        """
+        将场景转换为视频生成提示词（包含对话和情感）
+
+        Args:
+            character_dict: 可选的角色字典，用于添加详细角色信息
+
+        Returns:
+            适合Veo3视频生成的提示词
+        """
+        prompt_parts = []
+
+        # 1. 基础场景描述
+        prompt_parts.append(f"{self.location}, {self.time}")
+
+        # 2. 天气和氛围
+        if self.weather:
+            prompt_parts.append(f"{self.weather} weather")
+        if self.atmosphere:
+            prompt_parts.append(f"{self.atmosphere} atmosphere")
+
+        # 3. 角色信息
+        if self.characters and character_dict:
+            char_descriptions = []
+            for char_name in self.characters:
+                if char_name in character_dict:
+                    char = character_dict[char_name]
+                    desc_parts = [char_name]
+
+                    # 优先使用 appearance，其次 description
+                    if char.appearance:
+                        desc_parts.append(f"({char.appearance})")
+                    elif char.description:
+                        desc_parts.append(f"({char.description})")
+
+                    char_descriptions.append(" ".join(desc_parts))
+
+            if char_descriptions:
+                prompt_parts.append(", ".join(char_descriptions))
+        elif self.characters:
+            # 无角色字典：仅使用名称（向后兼容）
+            prompt_parts.append(", ".join(self.characters))
+
+        # 4. 动作描述
+        if self.action:
+            prompt_parts.append(self.action)
+
+        # 5. 对话和情感（核心新增）
+        if self.dialogues:
+            dialogue_descriptions = []
+            for dialogue in self.dialogues:
+                emotion_desc = f" with {dialogue.emotion} expression" if dialogue.emotion else ""
+                voice_style_desc = f" in {dialogue.voice_style} voice" if dialogue.voice_style else ""
+
+                dialogue_desc = f"{dialogue.character} speaking{emotion_desc}{voice_style_desc}: \"{dialogue.content}\""
+                dialogue_descriptions.append(dialogue_desc)
+
+            prompt_parts.append("; ".join(dialogue_descriptions))
+
+        # 6. 场景详细描述
+        prompt_parts.append(self.description)
+
+        # 7. 镜头类型和运镜
+        prompt_parts.append(f"{self.shot_type.value} shot")
+        prompt_parts.append(f"{self.camera_movement.value} camera movement")
+
+        # 8. 视觉风格
+        if self.visual_style:
+            prompt_parts.append(f"{self.visual_style} style")
+        if self.color_tone:
+            prompt_parts.append(f"{self.color_tone} color tone")
+
+        return ", ".join(prompt_parts)
+
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -175,7 +281,6 @@ class Scene(BaseModel):
                 "description": "Sunlight streams through large windows",
                 "shot_type": "medium_shot",
                 "camera_movement": "static",
-                "duration": 3.5,
                 "characters": ["Xiao Ming"],
                 "action": "sitting by the window, holding a coffee cup"
             }
@@ -193,9 +298,12 @@ class Script(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
 
     @property
-    def total_duration(self) -> float:
-        """计算总时长（秒）"""
-        return sum(scene.duration for scene in self.scenes)
+    def total_duration(self) -> Optional[float]:
+        """计算总时长（秒）- 如果所有场景都有duration则返回总和，否则返回None"""
+        durations = [scene.duration for scene in self.scenes if scene.duration is not None]
+        if len(durations) == len(self.scenes):
+            return sum(durations)
+        return None
 
     @property
     def total_scenes(self) -> int:
@@ -214,8 +322,10 @@ class Script(BaseModel):
         if not self.scenes:
             errors.append("Script must have at least one scene")
 
-        if self.total_duration > 600:  # 限制最长10分钟
-            errors.append(f"Total duration {self.total_duration}s exceeds 600s limit")
+        # 只在所有场景都有duration时才检查总时长
+        total_dur = self.total_duration
+        if total_dur is not None and total_dur > 600:  # 限制最长10分钟
+            errors.append(f"Total duration {total_dur}s exceeds 600s limit")
 
         # 验证角色一致性
         declared_chars = {char.name for char in self.characters}

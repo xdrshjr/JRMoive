@@ -68,6 +68,8 @@ class StoryboardOptimizer:
         """
         调整场景时长以匹配目标总时长
 
+        注意：只处理包含duration的场景，没有duration的场景会被跳过
+
         Args:
             scenes: 场景列表
             target_total: 目标总时长（秒）
@@ -78,13 +80,18 @@ class StoryboardOptimizer:
         if not scenes:
             return scenes
 
-        current_total = sum(s.duration for s in scenes)
+        # 只处理有duration的场景
+        scenes_with_duration = [s for s in scenes if s.duration is not None]
+        if not scenes_with_duration:
+            return scenes
+
+        current_total = sum(s.duration for s in scenes_with_duration)
         if current_total == 0:
             return scenes
 
         scale_factor = target_total / current_total
 
-        for scene in scenes:
+        for scene in scenes_with_duration:
             # 确保时长在合法范围内 (1-10秒)
             scene.duration = max(1.0, min(10.0, scene.duration * scale_factor))
 

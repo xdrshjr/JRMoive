@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     fast_llm_model: str = "qwen3-next-80b-a3b-instruct"
     enable_prompt_optimization: bool = True  # 是否启用提示词优化
 
+    # Judge LLM配置（用于图片质量评分）
+    judge_llm_api_key: str = ""
+    judge_llm_api_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    judge_llm_model: str = "doubao-seed-1-6-251015"
+    enable_character_consistency_judge: bool = True  # 是否启用角色一致性评分
+    candidate_images_per_scene: int = 3  # 每个场景生成的候选图片数量（1-5）
+    judge_temperature: float = 0.3  # Judge LLM的温度参数（越低越稳定）
+
     # 可选配置
     openai_api_key: Optional[str] = None
 

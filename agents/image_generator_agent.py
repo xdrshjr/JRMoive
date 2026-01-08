@@ -6,10 +6,12 @@ from datetime import datetime
 
 from agents.base_agent import BaseAgent
 from services.image_service_factory import ImageServiceFactory
+from services.llm_judge_service import LLMJudgeService
 from models.script_models import Scene, Character, Script
 from utils.concurrency import ConcurrencyLimiter, RateLimiter, TaskStats
 from utils.character_enhancer import CharacterDescriptionEnhancer
 from utils.prompt_optimizer import PromptOptimizer
+from config.settings import settings
 import logging
 
 
@@ -57,6 +59,20 @@ class ImageGenerationAgent(BaseAgent):
 
         # 提示词优化器
         self.prompt_optimizer = PromptOptimizer()
+
+        # LLM评分服务（用于角色一致性评估）
+        self.enable_judge = self.config.get('enable_character_consistency_judge', settings.enable_character_consistency_judge)
+        self.candidate_count = self.config.get('candidate_images_per_scene', settings.candidate_images_per_scene)
+        self.judge_service: Optional[LLMJudgeService] = None
+
+        if self.enable_judge:
+            try:
+                self.judge_service = LLMJudgeService()
+                self.logger.info(f"LLM judge service enabled, generating {self.candidate_count} candidates per scene")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize LLM judge service: {e}. Disabling judge.")
+                self.enable_judge = False
+                self.judge_service = None
 
     async def execute(self, scenes: List[Scene]) -> List[Dict[str, Any]]:
         """
@@ -154,7 +170,33 @@ class ImageGenerationAgent(BaseAgent):
 
     async def _generate_image_for_scene(self, scene: Scene) -> Dict[str, Any]:
         """
-        为单个场景生成图片（支持图生图）
+        为单个场景生成图片（支持图生图和多候选评分）
+
+        Args:
+            scene: 场景对象
+
+        Returns:
+            图片生成结果
+        """
+        self.logger.info(f"Generating image for scene: {scene.scene_id}")
+
+        # 检查是否需要生成多个候选并评分
+        should_judge = (
+            self.enable_judge and
+            self.judge_service and
+            self.candidate_count > 1 and
+            self.character_enhancer and
+            len(scene.characters) > 0
+        )
+
+        if should_judge:
+            return await self._generate_with_judging(scene)
+        else:
+            return await self._generate_single_image(scene)
+
+    async def _generate_single_image(self, scene: Scene) -> Dict[str, Any]:
+        """
+        生成单张图片（原有逻辑）
 
         Args:
             scene: 场景对象
@@ -267,6 +309,103 @@ class ImageGenerationAgent(BaseAgent):
             'api_response': result.get('api_response')
         }
 
+    async def _generate_with_judging(self, scene: Scene) -> Dict[str, Any]:
+        """
+        生成多个候选图片并使用LLM评分选择最佳
+
+        Args:
+            scene: 场景对象
+
+        Returns:
+            最佳图片生成结果（包含评分信息）
+        """
+        self.logger.info(f"Generating {self.candidate_count} candidates for scene: {scene.scene_id}")
+
+        # 获取主要角色（用于评分）
+        primary_character = scene.characters[0] if scene.characters else None
+        if not primary_character:
+            self.logger.warning("No character in scene, falling back to single generation")
+            return await self._generate_single_image(scene)
+
+        # 获取角色参考图
+        reference_image_path = None
+        if self.character_enhancer:
+            reference_image_path = self.character_enhancer.get_character_reference_image(primary_character)
+
+        if not reference_image_path or not Path(reference_image_path).exists():
+            self.logger.warning(f"No reference image for character {primary_character}, falling back to single generation")
+            return await self._generate_single_image(scene)
+
+        # 生成多个候选图片
+        candidates = []
+        candidate_paths = []
+
+        for i in range(self.candidate_count):
+            self.logger.info(f"Generating candidate {i+1}/{self.candidate_count}")
+
+            # 生成单张图片
+            result = await self._generate_single_image(scene)
+
+            # 保存候选信息
+            candidate_path = Path(result['image_path'])
+            candidates.append(result)
+            candidate_paths.append(candidate_path)
+
+            # 为候选图片重命名（添加候选索引）
+            new_filename = candidate_path.stem + f"_candidate_{i}" + candidate_path.suffix
+            new_path = candidate_path.parent / new_filename
+            candidate_path.rename(new_path)
+            result['image_path'] = str(new_path)
+            candidate_paths[i] = new_path
+
+        # 使用LLM评分
+        self.logger.info(f"Judging {len(candidates)} candidates")
+
+        # 获取场景提示词
+        scene_prompt = scene.to_image_prompt(self.character_dict)
+
+        # 批量评分
+        judge_results = await self.judge_service.batch_judge(
+            reference_image_path=Path(reference_image_path),
+            candidate_images=candidate_paths,
+            scene_prompt=scene_prompt,
+            character_name=primary_character
+        )
+
+        # 选择最佳候选
+        best_result = self.judge_service.select_best_candidate(judge_results)
+        best_index = best_result['candidate_index']
+        best_candidate = candidates[best_index]
+
+        # 将最佳候选重命名为最终文件
+        best_path = Path(best_candidate['image_path'])
+        final_filename = best_path.stem.replace(f"_candidate_{best_index}", "") + best_path.suffix
+        final_path = best_path.parent / final_filename
+        best_path.rename(final_path)
+
+        # 删除其他候选图片（可选，根据配置决定）
+        save_candidates = self.config.get('save_all_candidates', False)
+        if not save_candidates:
+            for i, candidate_path in enumerate(candidate_paths):
+                if i != best_index and candidate_path.exists():
+                    candidate_path.unlink()
+                    self.logger.debug(f"Deleted candidate {i}: {candidate_path}")
+
+        # 更新最佳候选的结果
+        best_candidate['image_path'] = str(final_path)
+        best_candidate['judge_score'] = best_result['score']
+        best_candidate['judge_reasoning'] = best_result.get('reasoning', '')
+        best_candidate['consistency_aspects'] = best_result.get('consistency_aspects', {})
+        best_candidate['candidate_index'] = best_index
+        best_candidate['total_candidates'] = self.candidate_count
+        best_candidate['all_judge_results'] = judge_results if save_candidates else None
+
+        self.logger.info(
+            f"Selected best candidate {best_index} with score {best_result['score']}/100 for scene {scene.scene_id}"
+        )
+
+        return best_candidate
+
     async def _call_progress_callback(self, progress: float, message: str):
         """调用进度回调"""
         if self.progress_callback:
@@ -320,3 +459,5 @@ class ImageGenerationAgent(BaseAgent):
         """关闭资源"""
         await self.service.close()
         await self.prompt_optimizer.close()
+        if self.judge_service:
+            await self.judge_service.close()

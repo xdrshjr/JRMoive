@@ -9,6 +9,7 @@ from services.image_service_factory import ImageServiceFactory
 from models.script_models import Scene, Character, Script
 from utils.concurrency import ConcurrencyLimiter, RateLimiter, TaskStats
 from utils.character_enhancer import CharacterDescriptionEnhancer
+from utils.prompt_optimizer import PromptOptimizer
 import logging
 
 
@@ -53,6 +54,9 @@ class ImageGenerationAgent(BaseAgent):
         # 图生图配置
         self.enable_image_to_image = self.config.get('enable_image_to_image', True)
         self.reference_image_weight = self.config.get('reference_image_weight', 0.7)
+
+        # 提示词优化器
+        self.prompt_optimizer = PromptOptimizer()
 
     async def execute(self, scenes: List[Scene]) -> List[Dict[str, Any]]:
         """
@@ -180,6 +184,16 @@ class ImageGenerationAgent(BaseAgent):
                 self.character_dict
             )
 
+        # 使用LLM优化提示词（在character enhancer之后）
+        optimized_prompt = await self.prompt_optimizer.optimize_image_prompt(enhanced_prompt)
+        self.logger.debug(f"Prompt before LLM optimization: {enhanced_prompt[:100]}...")
+        self.logger.debug(f"Prompt after LLM optimization: {optimized_prompt[:100]}...")
+
+        # 使用优化后的提示词
+        enhanced_prompt = optimized_prompt
+
+        if self.character_enhancer and self.character_dict:
+
             # 获取场景seed
             if len(scene.characters) == 1:
                 # 单角色场景：使用角色专属seed
@@ -305,3 +319,4 @@ class ImageGenerationAgent(BaseAgent):
     async def close(self):
         """关闭资源"""
         await self.service.close()
+        await self.prompt_optimizer.close()

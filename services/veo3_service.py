@@ -10,6 +10,14 @@ from utils.retry import async_retry
 import logging
 
 
+class VideoGenerationError(Exception):
+    """视频生成基础异常"""
+    def __init__(self, message: str, error_code: str = "", retryable: bool = True):
+        super().__init__(message)
+        self.error_code = error_code
+        self.retryable = retryable
+
+
 class Veo3Service:
     """Veo3 API服务封装 - 图片到视频转换"""
 
@@ -106,9 +114,10 @@ class Veo3Service:
             # 只有在明确指定duration时才添加，否则让视频模型自己决定
             if duration is not None:
                 data['seconds'] = str(int(duration))  # 必须是整数字符串
+                self.logger.info(f"⚠️ Setting video duration to {duration}s (seconds={int(duration)})")
 
             self.logger.debug(f"Using model: {self.model}")
-            self.logger.debug(f"Form data: {data}")
+            self.logger.info(f"📤 Sending request with data: {data}")
 
             try:
                 # 使用 multipart/form-data，需要临时移除 Content-Type header
@@ -251,7 +260,28 @@ class Veo3Service:
                     return status
             elif state == 'failed':
                 error_msg = status.get('error', 'Unknown error')
-                raise RuntimeError(f"Video generation failed: {error_msg}")
+                error_code = ""
+
+                # 解析错误信息
+                if isinstance(error_msg, dict):
+                    error_code = error_msg.get('code', '')
+                    error_message = error_msg.get('message', str(error_msg))
+                else:
+                    error_message = str(error_msg)
+                    # 尝试从错误消息中提取错误码
+                    if 'code' in error_message.lower():
+                        error_code = error_message
+
+                self.logger.error(f"Video generation failed: code={error_code}, message={error_message}")
+
+                # 判断是否可重试
+                retryable = self._is_retryable_error(error_code, error_message)
+
+                raise VideoGenerationError(
+                    error_msg,
+                    error_code=error_code,
+                    retryable=retryable
+                )
 
             await asyncio.sleep(poll_interval)
 
@@ -290,6 +320,54 @@ class Veo3Service:
                 return video_url
 
         raise ValueError("Could not get video URL from content endpoint")
+
+    def _is_retryable_error(self, error_code: str, error_message: str) -> bool:
+        """
+        判断错误是否可重试
+
+        Args:
+            error_code: 错误码
+            error_message: 错误消息
+
+        Returns:
+            是否可重试
+        """
+        # 不可重试的错误码列表（内容审核、违规等）
+        non_retryable_codes = [
+            'PROMINENT_PEOPLE_FILTER_FAILED',  # 名人检测失败
+            'CONTENT_POLICY_VIOLATION',  # 内容违规
+            'NSFW_CONTENT_DETECTED',  # 不适宜内容
+            'COPYRIGHT_VIOLATION',  # 版权违规
+            'INVALID_INPUT',  # 无效输入
+            'INVALID_PROMPT',  # 无效提示词
+        ]
+
+        # 可重试的错误码列表（临时性错误）
+        retryable_codes = [
+            'INTERNAL_ERROR',  # 内部错误
+            'SERVICE_UNAVAILABLE',  # 服务不可用
+            'TIMEOUT',  # 超时
+            'RATE_LIMIT_EXCEEDED',  # 速率限制
+            'INSUFFICIENT_QUOTA',  # 配额不足（可能短时间后恢复）
+        ]
+
+        error_upper = error_message.upper()
+
+        # 检查明确的不可重试错误
+        for code in non_retryable_codes:
+            if code in error_code.upper() or code in error_upper:
+                self.logger.warning(f"Non-retryable error detected: {code}")
+                return False
+
+        # 检查明确的可重试错误
+        for code in retryable_codes:
+            if code in error_code.upper() or code in error_upper:
+                self.logger.info(f"Retryable error detected: {code}")
+                return True
+
+        # 默认：未知错误视为可重试（保守策略）
+        self.logger.info(f"Unknown error type, treating as retryable: {error_message}")
+        return True
 
     async def check_task_status(self, task_id: str) -> Dict[str, Any]:
         """

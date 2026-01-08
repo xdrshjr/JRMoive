@@ -64,7 +64,21 @@ Edit `config.yaml` to customize:
 
 ### 3. API Keys
 
-Ensure you have configured the required API keys in your `.env` file:
+You have two options to configure API keys:
+
+**Option 1: In config.yaml (Recommended for project-specific keys)**
+
+Edit `config.yaml` and add your API keys:
+
+```yaml
+api_keys:
+  doubao_api_key: "your_doubao_key_here"
+  veo3_api_key: "your_veo3_key_here"
+```
+
+**Option 2: In .env file (Global keys for all projects)**
+
+Create/edit `.env` file in the project root:
 
 ```bash
 # Required for image generation (choose one)
@@ -75,6 +89,8 @@ NANO_BANANA_API_KEY=your_nano_banana_key_here
 # Required for video generation
 VEO3_API_KEY=your_veo3_key_here
 ```
+
+**Priority**: config.yaml > .env file. If a key is set in both places, the config.yaml value will be used.
 
 ### 4. Generate Your Drama
 

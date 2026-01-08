@@ -4,6 +4,7 @@ Project Runner
 Executes drama generation workflow with project-specific configuration.
 """
 
+import os
 import asyncio
 import time
 from pathlib import Path
@@ -136,6 +137,32 @@ class ProjectRunner:
 
         return character_images if character_images else None
 
+    def _setup_api_keys(self):
+        """
+        Set API keys from project config to environment variables
+
+        This allows services to read API keys from the project config
+        Priority: config.yaml > existing environment variables
+        """
+        api_keys_map = {
+            'doubao_api_key': 'DOUBAO_API_KEY',
+            'nano_banana_api_key': 'NANO_BANANA_API_KEY',
+            'midjourney_api_key': 'MIDJOURNEY_API_KEY',
+            'veo3_api_key': 'VEO3_API_KEY',
+            'openai_api_key': 'OPENAI_API_KEY',
+        }
+
+        for config_key, env_key in api_keys_map.items():
+            # Get value from config
+            config_value = getattr(self.project_config.api_keys, config_key, None)
+
+            if config_value:
+                # Set to environment (overrides existing value)
+                os.environ[env_key] = config_value
+                # Don't log the actual key for security
+                import logging
+                logging.getLogger(__name__).debug(f"Set {env_key} from project config")
+
     async def run(self, progress_callback: Optional[Callable] = None) -> str:
         """
         Execute drama generation workflow
@@ -153,6 +180,9 @@ class ProjectRunner:
         self.start_time = time.time()
 
         try:
+            # Set API keys from config to environment variables (if provided)
+            self._setup_api_keys()
+
             # Load script
             script_path = Path(self.project_config.script.file)
             if not script_path.exists():

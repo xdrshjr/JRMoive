@@ -122,3 +122,19 @@ logging:
   level: "INFO"                # "DEBUG", "INFO", "WARNING", "ERROR"
   save_to_file: true
   file: "outputs/generation.log"  # Log file path (relative to project folder)
+
+# ==================== API Keys Configuration ====================
+# You can configure API keys here OR in the .env file
+# Priority: config.yaml > .env file
+# If not set here, will fall back to environment variables
+api_keys:
+  # Image generation services (configure the one you're using)
+  doubao_api_key: null           # Doubao (豆包) API key
+  # nano_banana_api_key: null    # Nano Banana Pro API key
+  # midjourney_api_key: null     # Midjourney API key
+
+  # Video generation service
+  veo3_api_key: null             # Veo3 API key
+
+  # Optional services
+  # openai_api_key: null         # OpenAI API key (optional)

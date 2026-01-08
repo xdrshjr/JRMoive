@@ -11,9 +11,14 @@ import argparse
 from pathlib import Path
 from typing import Optional
 import logging
+from dotenv import load_dotenv
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Load .env file to environment variables
+# This must be done early so validators can read from os.getenv()
+load_dotenv()
 
 from core.project_manager import ProjectManager
 from core.config_loader import load_yaml_config, apply_cli_overrides, ConfigLoadError

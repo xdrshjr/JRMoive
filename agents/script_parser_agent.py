@@ -7,6 +7,8 @@ from models.script_models import (
     ShotType, CameraMovement
 )
 from agents.base_agent import BaseAgent, AgentState
+from utils.duration_calculator import DurationCalculator
+from config.settings import settings
 import logging
 
 
@@ -55,6 +57,15 @@ class ScriptParserAgent(BaseAgent):
                 characters=characters,
                 scenes=scenes
             )
+
+            # 应用智能时长计算（如果启用）
+            if settings.enable_smart_duration:
+                DurationCalculator.apply_to_script(script, override=False)
+                scenes_with_duration = sum(1 for s in script.scenes if s.duration is not None)
+                self.logger.info(
+                    f"Applied smart duration calculation. "
+                    f"Scenes with duration: {scenes_with_duration}/{len(script.scenes)}"
+                )
 
             # 验证剧本
             errors = script.validate_script()

@@ -5,9 +5,11 @@ from pathlib import Path
 from datetime import datetime
 
 from agents.base_agent import BaseAgent
-from services.veo3_service import Veo3Service
+from services.veo3_service import Veo3Service, VideoGenerationError
 from models.script_models import Scene, CameraMovement
 from utils.concurrency import ConcurrencyLimiter
+from utils.prompt_optimizer import PromptOptimizer
+from config.settings import settings
 import logging
 
 
@@ -30,6 +32,23 @@ class VideoGenerationAgent(BaseAgent):
         # 并发限制（Veo3生成较慢，建议降低并发数）
         max_concurrent = self.config.get('max_concurrent', 2)
         self.limiter = ConcurrencyLimiter(max_concurrent)
+
+        # 提示词优化器
+        self.prompt_optimizer = PromptOptimizer()
+
+        # 重试配置
+        self.max_retries = self.config.get(
+            'max_retries',
+            settings.video_generation_max_retries
+        )
+        self.retry_delay = self.config.get(
+            'retry_delay',
+            settings.video_generation_retry_delay
+        )
+        self.retry_backoff = self.config.get(
+            'retry_backoff',
+            settings.video_generation_retry_backoff
+        )
 
     async def execute(
         self,
@@ -92,7 +111,7 @@ class VideoGenerationAgent(BaseAgent):
 
     async def _generate_video_clip(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        生成单个视频片段
+        生成单个视频片段（带重试机制）
 
         Args:
             task_data: 包含image_result、scene和character_dict的字典
@@ -107,11 +126,87 @@ class VideoGenerationAgent(BaseAgent):
         image_path = image_result['image_path']
         scene_id = scene.scene_id
 
-        self.logger.info(f"Generating video for scene: {scene_id}")
+        # 带重试的视频生成
+        for attempt in range(self.max_retries + 1):
+            try:
+                return await self._generate_video_clip_once(
+                    image_path,
+                    scene,
+                    scene_id,
+                    character_dict,
+                    attempt
+                )
+            except VideoGenerationError as e:
+                # 检查是否可重试
+                if not e.retryable:
+                    self.logger.error(
+                        f"Non-retryable error for scene {scene_id}: {e}"
+                    )
+                    raise
+
+                # 检查是否还有重试次数
+                if attempt < self.max_retries:
+                    delay = self.retry_delay * (self.retry_backoff ** attempt)
+                    self.logger.warning(
+                        f"Video generation failed for scene {scene_id} "
+                        f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.error(
+                        f"Video generation failed for scene {scene_id} "
+                        f"after {self.max_retries + 1} attempts"
+                    )
+                    raise
+            except Exception as e:
+                # 其他异常（网络错误等）也进行重试
+                if attempt < self.max_retries:
+                    delay = self.retry_delay * (self.retry_backoff ** attempt)
+                    self.logger.warning(
+                        f"Unexpected error for scene {scene_id} "
+                        f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.error(
+                        f"Video generation failed for scene {scene_id} "
+                        f"after {self.max_retries + 1} attempts with error: {e}"
+                    )
+                    raise
+
+    async def _generate_video_clip_once(
+        self,
+        image_path: str,
+        scene: Scene,
+        scene_id: str,
+        character_dict: Optional[Dict[str, Any]],
+        attempt: int
+    ) -> Dict[str, Any]:
+        """
+        执行一次视频片段生成
+
+        Args:
+            image_path: 图片路径
+            scene: 场景对象
+            scene_id: 场景ID
+            character_dict: 角色字典
+            attempt: 当前尝试次数（从0开始）
+
+        Returns:
+            视频生成结果
+        """
+        log_prefix = f"[Attempt {attempt + 1}] " if attempt > 0 else ""
+        self.logger.info(f"{log_prefix}Generating video for scene: {scene_id}")
 
         # 生成视频提示词（包含对话信息）
         video_prompt = scene.to_video_prompt(character_dict)
-        self.logger.debug(f"Video prompt: {video_prompt}")
+        self.logger.debug(f"Original video prompt: {video_prompt}")
+
+        # 使用LLM优化视频提示词
+        optimized_video_prompt = await self.prompt_optimizer.optimize_video_prompt(video_prompt)
+        self.logger.debug(f"Optimized video prompt: {optimized_video_prompt}")
 
         # 配置视频参数
         video_config = {
@@ -119,7 +214,7 @@ class VideoGenerationAgent(BaseAgent):
             'resolution': self.config.get('resolution', '1920x1080'),
             'motion_strength': self.config.get('motion_strength', 0.5),
             'camera_motion': self._map_camera_motion(scene.camera_movement),
-            'prompt': video_prompt  # 新增：传递视频提示词
+            'prompt': optimized_video_prompt  # 使用优化后的提示词
         }
 
         # 只在scene指定了duration时才添加该参数，否则让视频模型自己决定时长
@@ -175,3 +270,4 @@ class VideoGenerationAgent(BaseAgent):
     async def close(self):
         """关闭资源"""
         await self.service.close()
+        await self.prompt_optimizer.close()

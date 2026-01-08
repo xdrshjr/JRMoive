@@ -163,7 +163,7 @@ def validate_project_config(
 
 def check_api_keys(config: ProjectConfig) -> Tuple[bool, List[str]]:
     """
-    Check that required API keys are configured in environment
+    Check that required API keys are configured in project config or environment
 
     Args:
         config: Project configuration
@@ -173,21 +173,31 @@ def check_api_keys(config: ProjectConfig) -> Tuple[bool, List[str]]:
     """
     missing_keys = []
 
+    # Helper function to get API key from config or env
+    def get_api_key(config_key: str, env_key: str) -> Optional[str]:
+        """Get API key from config first, then fall back to environment variable"""
+        # Check config
+        config_value = getattr(config.api_keys, config_key, None)
+        if config_value:
+            return config_value
+        # Fall back to environment
+        return os.getenv(env_key)
+
     # Check image service API key
     if config.image.service == "doubao":
-        if not os.getenv("DOUBAO_API_KEY"):
-            missing_keys.append("DOUBAO_API_KEY (for Doubao image service)")
+        if not get_api_key("doubao_api_key", "DOUBAO_API_KEY"):
+            missing_keys.append("DOUBAO_API_KEY (for Doubao image service) - add to config.yaml api_keys section or .env file")
     elif config.image.service == "nano_banana":
-        if not os.getenv("NANO_BANANA_API_KEY"):
-            missing_keys.append("NANO_BANANA_API_KEY (for Nano Banana service)")
+        if not get_api_key("nano_banana_api_key", "NANO_BANANA_API_KEY"):
+            missing_keys.append("NANO_BANANA_API_KEY (for Nano Banana service) - add to config.yaml api_keys section or .env file")
     elif config.image.service == "midjourney":
-        if not os.getenv("MIDJOURNEY_API_KEY"):
-            missing_keys.append("MIDJOURNEY_API_KEY (for Midjourney service)")
+        if not get_api_key("midjourney_api_key", "MIDJOURNEY_API_KEY"):
+            missing_keys.append("MIDJOURNEY_API_KEY (for Midjourney service) - add to config.yaml api_keys section or .env file")
 
     # Check video service API key
     if config.video.service == "veo3":
-        if not os.getenv("VEO3_API_KEY"):
-            missing_keys.append("VEO3_API_KEY (for Veo3 video service)")
+        if not get_api_key("veo3_api_key", "VEO3_API_KEY"):
+            missing_keys.append("VEO3_API_KEY (for Veo3 video service) - add to config.yaml api_keys section or .env file")
 
     return len(missing_keys) == 0, missing_keys
 

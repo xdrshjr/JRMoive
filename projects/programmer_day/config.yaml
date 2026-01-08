@@ -25,13 +25,11 @@ characters:
 
   # 本项目使用自动生成模式，不需要预先准备角色图片
   # 如果想使用已有的角色图片，可以取消下面的注释并配置：
-  # reference_images:
-  #   小明:
-  #     mode: "load"
-  #     images:
-  #       - "characters/xiaoming_front.png"
-  #   小红:
-  #     mode: "generate"
+  reference_images:
+   小明:
+     mode: "load"
+     images:
+       - "characters/20240723142127.jpg"
 
 # ==================== 图像生成 ====================
 image:
@@ -89,6 +87,21 @@ performance:
 
 # ==================== 日志配置 ====================
 logging:
-  level: "INFO"
+  level: "DEBUG"
   save_to_file: true
   file: "outputs/generation.log"
+
+# ==================== API密钥配置 ====================
+# 可以在这里配置API密钥，也可以在.env文件中配置
+# 优先级: config.yaml > .env文件
+# 如果这里不设置，会从环境变量读取
+api_keys:
+  # 图像生成服务（配置你使用的服务）
+  doubao_api_key: null  # 请替换为你的豆包API密钥，或在.env中配置DOUBAO_API_KEY
+  # nano_banana_api_key: null                  # Nano Banana Pro API密钥
+
+  # 视频生成服务
+  veo3_api_key: null    # 请替换为你的Veo3 API密钥，或在.env中配置VEO3_API_KEY
+
+  # 可选服务
+  # openai_api_key: null                       # OpenAI API密钥（可选）

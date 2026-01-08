@@ -21,14 +21,30 @@
 
 ## 如何生成
 
-### 1. 确保API密钥已配置
+### 1. 配置API密钥
 
-在项目根目录的 `.env` 文件中配置以下API密钥：
+你有两种方式配置API密钥：
+
+**方式1: 在项目配置文件中（推荐）**
+
+编辑 `config.yaml` 文件，添加你的API密钥：
+
+```yaml
+api_keys:
+  doubao_api_key: "your_doubao_key_here"  # 替换为你的豆包API密钥
+  veo3_api_key: "your_veo3_key_here"      # 替换为你的Veo3 API密钥
+```
+
+**方式2: 在全局.env文件中**
+
+在项目根目录的 `.env` 文件中配置：
 
 ```bash
 DOUBAO_API_KEY=your_doubao_key_here
 VEO3_API_KEY=your_veo3_key_here
 ```
+
+**优先级**: config.yaml > .env文件。如果两处都设置了，会使用config.yaml中的值。
 
 ### 2. 验证项目配置
 

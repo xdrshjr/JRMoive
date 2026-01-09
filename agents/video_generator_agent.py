@@ -6,9 +6,10 @@ from datetime import datetime
 
 from agents.base_agent import BaseAgent
 from services.veo3_service import Veo3Service, VideoGenerationError
-from models.script_models import Scene, CameraMovement
+from models.script_models import Scene, SubScene, CameraMovement
 from utils.concurrency import ConcurrencyLimiter
 from utils.prompt_optimizer import PromptOptimizer
+from utils.video_utils import FFmpegProcessor
 from config.settings import settings
 import logging
 
@@ -37,6 +38,9 @@ class VideoGenerationAgent(BaseAgent):
 
         # 提示词优化器
         self.prompt_optimizer = PromptOptimizer()
+        
+        # FFmpeg处理器（用于帧提取和视频拼接）
+        self.ffmpeg_processor = FFmpegProcessor()
 
         # 重试配置
         self.max_retries = self.config.get(
@@ -114,7 +118,8 @@ class VideoGenerationAgent(BaseAgent):
     async def _generate_video_clip(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         生成单个视频片段（带重试机制和智能提示词调整）
-
+        支持带子场景的场景生成
+        
         Args:
             task_data: 包含image_result、scene和character_dict的字典
 
@@ -125,6 +130,39 @@ class VideoGenerationAgent(BaseAgent):
         scene = task_data['scene']
         character_dict = task_data.get('character_dict')
 
+        # 检查是否有子场景
+        if scene.sub_scenes:
+            self.logger.info(f"Scene {scene.scene_id} has {len(scene.sub_scenes)} sub-scenes, using hierarchical generation")
+            return await self._generate_scene_with_subscenes(
+                image_result,
+                scene,
+                character_dict
+            )
+        else:
+            # 普通场景，使用原有逻辑
+            return await self._generate_simple_scene(
+                image_result,
+                scene,
+                character_dict
+            )
+
+    async def _generate_simple_scene(
+        self,
+        image_result: Dict[str, Any],
+        scene: Scene,
+        character_dict: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        生成简单场景（无子场景）
+        
+        Args:
+            image_result: 图片生成结果
+            scene: 场景对象
+            character_dict: 角色字典
+            
+        Returns:
+            视频生成结果
+        """
         image_path = image_result['image_path']
         scene_id = scene.scene_id
 
@@ -190,6 +228,194 @@ class VideoGenerationAgent(BaseAgent):
                         f"after {self.max_retries + 1} attempts with error: {e}"
                     )
                     raise
+
+    async def _generate_scene_with_subscenes(
+        self,
+        image_result: Dict[str, Any],
+        scene: Scene,
+        character_dict: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        生成包含子场景的场景视频
+        
+        流程:
+        1. 从图片生成基础场景视频
+        2. 从基础视频提取指定帧
+        3. 使用提取的帧生成所有子场景视频
+        4. 拼接基础视频和所有子场景视频
+        
+        Args:
+            image_result: 图片生成结果
+            scene: 场景对象（包含子场景）
+            character_dict: 角色字典
+            
+        Returns:
+            最终拼接后的视频生成结果
+        """
+        scene_id = scene.scene_id
+        self.logger.info(
+            f"Generating hierarchical scene {scene_id} with {len(scene.sub_scenes)} sub-scenes"
+        )
+        
+        # Step 1: 生成基础场景视频
+        self.logger.info(f"Step 1/4: Generating base scene video for {scene_id}")
+        base_video_result = await self._generate_simple_scene(
+            image_result,
+            scene,
+            character_dict
+        )
+        base_video_path = base_video_result['video_path']
+        self.logger.info(f"Base scene video generated: {base_video_path}")
+        
+        # Step 2: 从基础视频提取帧
+        self.logger.info(
+            f"Step 2/4: Extracting frame at index {scene.extract_frame_index} from base video"
+        )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        extracted_frame_path = self.output_dir / f"{scene_id}_extracted_frame_{timestamp}.png"
+        
+        try:
+            self.ffmpeg_processor.extract_frame(
+                video_path=base_video_path,
+                frame_index=scene.extract_frame_index,
+                output_path=str(extracted_frame_path)
+            )
+            self.logger.info(f"Frame extracted successfully: {extracted_frame_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to extract frame from base video: {e}")
+            raise
+        
+        # Step 3: 生成所有子场景视频
+        self.logger.info(f"Step 3/4: Generating {len(scene.sub_scenes)} sub-scene videos")
+        sub_scene_results = []
+        
+        for idx, sub_scene in enumerate(scene.sub_scenes, 1):
+            self.logger.info(
+                f"Generating sub-scene {idx}/{len(scene.sub_scenes)}: {sub_scene.sub_scene_id}"
+            )
+            
+            try:
+                sub_video_result = await self._generate_subscene_video(
+                    extracted_frame_path=str(extracted_frame_path),
+                    sub_scene=sub_scene,
+                    parent_scene=scene,
+                    character_dict=character_dict
+                )
+                sub_scene_results.append(sub_video_result)
+                self.logger.info(
+                    f"Sub-scene video generated: {sub_video_result['video_path']}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to generate sub-scene {sub_scene.sub_scene_id}: {e}"
+                )
+                # 继续生成其他子场景，不因为一个失败而中断
+                continue
+        
+        # Step 4: 拼接所有视频
+        self.logger.info(
+            f"Step 4/4: Concatenating base video with {len(sub_scene_results)} sub-scene videos"
+        )
+        
+        # 准备要拼接的视频路径列表
+        video_paths_to_concat = [base_video_path]
+        video_paths_to_concat.extend([r['video_path'] for r in sub_scene_results])
+        
+        # 生成最终拼接视频的路径
+        final_video_path = self.output_dir / f"{scene_id}_final_{timestamp}.mp4"
+        
+        try:
+            self.ffmpeg_processor.concatenate_videos_filter(
+                video_paths=video_paths_to_concat,
+                output_path=str(final_video_path)
+            )
+            self.logger.info(f"Final scene video created: {final_video_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to concatenate videos: {e}")
+            raise
+        
+        # 构建返回结果
+        return {
+            'scene_id': scene_id,
+            'video_path': str(final_video_path),
+            'duration': scene.duration,
+            'config': base_video_result['config'],
+            'api_response': base_video_result['api_response'],
+            'dialogues': [d.model_dump() for d in scene.dialogues],
+            'has_subscenes': True,
+            'base_video_path': base_video_path,
+            'sub_scene_videos': [r['video_path'] for r in sub_scene_results],
+            'extracted_frame_path': str(extracted_frame_path)
+        }
+
+    async def _generate_subscene_video(
+        self,
+        extracted_frame_path: str,
+        sub_scene: SubScene,
+        parent_scene: Scene,
+        character_dict: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        生成单个子场景视频
+        
+        Args:
+            extracted_frame_path: 从基础视频提取的帧图片路径
+            sub_scene: 子场景对象
+            parent_scene: 父场景对象
+            character_dict: 角色字典
+            
+        Returns:
+            子场景视频生成结果
+        """
+        sub_scene_id = sub_scene.sub_scene_id
+        self.logger.info(f"Generating sub-scene video: {sub_scene_id}")
+        
+        # 生成子场景视频提示词
+        video_prompt = sub_scene.to_video_prompt(parent_scene, character_dict)
+        self.logger.debug(f"Sub-scene original prompt: {video_prompt}")
+        
+        # 使用LLM优化子场景提示词
+        optimized_prompt = await self.prompt_optimizer.optimize_video_prompt(video_prompt)
+        self.logger.debug(f"Sub-scene optimized prompt: {optimized_prompt}")
+        
+        # 配置视频参数（继承或使用子场景的设置）
+        camera_movement = sub_scene.camera_movement if sub_scene.camera_movement else parent_scene.camera_movement
+        
+        video_config = {
+            'fps': self.config.get('fps', 30),
+            'resolution': self.config.get('resolution', '1920x1080'),
+            'motion_strength': self.config.get('motion_strength', 0.5),
+            'camera_motion': self._map_camera_motion(camera_movement),
+            'prompt': optimized_prompt
+        }
+        
+        if sub_scene.duration is not None:
+            video_config['duration'] = sub_scene.duration
+        
+        # 调用Veo3 API生成子场景视频
+        api_result = await self.service.image_to_video(
+            image_path=extracted_frame_path,
+            **video_config
+        )
+        
+        # 下载视频
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{sub_scene_id}_{timestamp}.mp4"
+        save_path = self.output_dir / filename
+        
+        video_path = await self.service.download_video(
+            api_result['video_url'],
+            save_path
+        )
+        
+        return {
+            'sub_scene_id': sub_scene_id,
+            'video_path': str(video_path),
+            'duration': sub_scene.duration,
+            'config': video_config,
+            'api_response': api_result,
+            'dialogues': [d.model_dump() for d in sub_scene.dialogues]
+        }
 
     async def _generate_video_clip_once(
         self,

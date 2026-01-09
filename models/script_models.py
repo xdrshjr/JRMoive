@@ -96,6 +96,129 @@ class SoundEffect(BaseModel):
     }
 
 
+class SubScene(BaseModel):
+    """子场景模型"""
+    sub_scene_id: str = Field(..., description="子场景唯一标识符")
+    description: str = Field(..., description="子场景详细描述")
+    action: Optional[str] = Field(None, description="动作描述")
+    
+    # 分镜参数
+    shot_type: Optional[ShotType] = Field(None, description="镜头类型（可继承父场景）")
+    camera_movement: Optional[CameraMovement] = Field(None, description="摄像机运动（可继承父场景）")
+    duration: Optional[float] = Field(default=3.0, description="时长（秒）")
+    
+    # 内容
+    dialogues: List[Dialogue] = Field(default_factory=list, description="对话列表")
+    narrations: List[Narration] = Field(default_factory=list, description="旁白列表")
+    sound_effects: List[SoundEffect] = Field(default_factory=list, description="音效列表")
+    
+    # 视觉风格（可继承或覆盖父场景）
+    visual_style: Optional[str] = Field(None, description="视觉风格（cinematic, anime等）")
+    color_tone: Optional[str] = Field(None, description="色调（warm, cool, vibrant等）")
+    
+    @field_validator('duration')
+    @classmethod
+    def validate_duration(cls, v):
+        """验证时长合法性"""
+        if v is not None and (v < 1.0 or v > 10.0):
+            raise ValueError("SubScene duration must be between 1 and 10 seconds")
+        return v
+    
+    def to_video_prompt(
+        self, 
+        parent_scene: 'Scene',
+        character_dict: Optional[Dict[str, 'Character']] = None
+    ) -> str:
+        """
+        将子场景转换为视频生成提示词（继承父场景的基础信息）
+        
+        Args:
+            parent_scene: 父场景对象
+            character_dict: 可选的角色字典
+            
+        Returns:
+            适合Veo3视频生成的提示词
+        """
+        prompt_parts = []
+        
+        # 1. 继承父场景的基础描述
+        prompt_parts.append(f"{parent_scene.location}, {parent_scene.time}")
+        
+        # 2. 继承天气和氛围
+        if parent_scene.weather:
+            prompt_parts.append(f"{parent_scene.weather} weather")
+        if parent_scene.atmosphere:
+            prompt_parts.append(f"{parent_scene.atmosphere} atmosphere")
+        
+        # 3. 继承角色信息
+        if parent_scene.characters and character_dict:
+            char_descriptions = []
+            for char_name in parent_scene.characters:
+                if char_name in character_dict:
+                    char = character_dict[char_name]
+                    desc_parts = [char_name]
+                    
+                    if char.appearance:
+                        desc_parts.append(f"({char.appearance})")
+                    elif char.description:
+                        desc_parts.append(f"({char.description})")
+                    
+                    char_descriptions.append(" ".join(desc_parts))
+            
+            if char_descriptions:
+                prompt_parts.append(", ".join(char_descriptions))
+        elif parent_scene.characters:
+            prompt_parts.append(", ".join(parent_scene.characters))
+        
+        # 4. 动作描述
+        if self.action:
+            prompt_parts.append(self.action)
+        
+        # 5. 子场景对话
+        if self.dialogues:
+            dialogue_descriptions = []
+            for dialogue in self.dialogues:
+                emotion_desc = f" with {dialogue.emotion} expression" if dialogue.emotion else ""
+                voice_style_desc = f" in {dialogue.voice_style} voice" if dialogue.voice_style else ""
+                
+                dialogue_desc = f"{dialogue.character} speaking{emotion_desc}{voice_style_desc}: \"{dialogue.content}\""
+                dialogue_descriptions.append(dialogue_desc)
+            
+            prompt_parts.append("; ".join(dialogue_descriptions))
+        
+        # 6. 子场景详细描述
+        prompt_parts.append(self.description)
+        
+        # 7. 镜头类型和运镜（使用子场景的或继承父场景的）
+        shot_type = self.shot_type if self.shot_type else parent_scene.shot_type
+        camera_movement = self.camera_movement if self.camera_movement else parent_scene.camera_movement
+        
+        prompt_parts.append(f"{shot_type.value} shot")
+        prompt_parts.append(f"{camera_movement.value} camera movement")
+        
+        # 8. 视觉风格（优先使用子场景的，否则继承父场景的）
+        visual_style = self.visual_style if self.visual_style else parent_scene.visual_style
+        color_tone = self.color_tone if self.color_tone else parent_scene.color_tone
+        
+        if visual_style:
+            prompt_parts.append(f"{visual_style} style")
+        if color_tone:
+            prompt_parts.append(f"{color_tone} color tone")
+        
+        return ", ".join(prompt_parts)
+    
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "sub_scene_id": "scene_001_sub_001",
+                "description": "Close-up of steaming coffee cup",
+                "shot_type": "close_up",
+                "duration": 3.0
+            }
+        }
+    }
+
+
 class Scene(BaseModel):
     """场景模型"""
     scene_id: str = Field(..., description="场景唯一标识符")
@@ -120,6 +243,10 @@ class Scene(BaseModel):
     # 视觉风格
     visual_style: Optional[str] = Field(None, description="视觉风格（cinematic, anime等）")
     color_tone: Optional[str] = Field(None, description="色调（warm, cool, vibrant等）")
+    
+    # 子场景支持
+    sub_scenes: List[SubScene] = Field(default_factory=list, description="子场景列表")
+    extract_frame_index: Optional[int] = Field(default=5, description="从基础视频提取帧的位置（负数表示从末尾倒数）")
 
     @field_validator('duration')
     @classmethod

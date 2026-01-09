@@ -3,7 +3,7 @@
 import re
 from typing import List, Dict, Any, Optional
 from models.script_models import (
-    Script, Scene, Character, Dialogue,
+    Script, Scene, SubScene, Character, Dialogue,
     ShotType, CameraMovement
 )
 from agents.base_agent import BaseAgent, AgentState
@@ -190,40 +190,68 @@ class ScriptParserAgent(BaseAgent):
                             content: str) -> Optional[Scene]:
         """解析单个场景的内容"""
         try:
+            # 分离子场景内容和主场景内容
+            # 子场景格式: ### 子场景N-M：子场景名称
+            sub_scene_pattern = r'(###\s*子场景.+?)(?=###\s*子场景|$)'
+            sub_scene_matches = list(re.finditer(sub_scene_pattern, content, re.DOTALL))
+            
+            # 如果有子场景，分离主场景内容
+            if sub_scene_matches:
+                # 主场景内容是第一个子场景之前的部分
+                first_sub_scene_pos = sub_scene_matches[0].start()
+                main_content = content[:first_sub_scene_pos].strip()
+            else:
+                main_content = content
+            
             # 提取场景属性
-            location = self._extract_field(content, r'地点[:：]\s*(.+)')
-            time = self._extract_field(content, r'时间[:：]\s*(.+)')
-            weather = self._extract_field(content, r'天气[:：]\s*(.+)')
-            atmosphere = self._extract_field(content, r'氛围[:：]\s*(.+)')
-            description = self._extract_field(content, r'描述[:：]\s*(.+)')
+            location = self._extract_field(main_content, r'地点[:：]\s*(.+)')
+            time = self._extract_field(main_content, r'时间[:：]\s*(.+)')
+            weather = self._extract_field(main_content, r'天气[:：]\s*(.+)')
+            atmosphere = self._extract_field(main_content, r'氛围[:：]\s*(.+)')
+            description = self._extract_field(main_content, r'描述[:：]\s*(.+)')
 
             # 提取镜头参数
-            duration_str = self._extract_field(content, r'时长[:：]\s*([\d.]+)')
+            duration_str = self._extract_field(main_content, r'时长[:：]\s*([\d.]+)')
             duration = float(duration_str) if duration_str else None
 
-            shot_type_str = self._extract_field(content, r'镜头[:：]\s*(.+)')
+            shot_type_str = self._extract_field(main_content, r'镜头[:：]\s*(.+)')
             shot_type = self._parse_shot_type(shot_type_str)
 
-            camera_movement_str = self._extract_field(content, r'运镜[:：]\s*(.+)')
+            camera_movement_str = self._extract_field(main_content, r'运镜[:：]\s*(.+)')
             camera_movement = self._parse_camera_movement(camera_movement_str)
 
-            visual_style = self._extract_field(content, r'风格[:：]\s*(.+)')
-            color_tone = self._extract_field(content, r'色调[:：]\s*(.+)')
+            visual_style = self._extract_field(main_content, r'风格[:：]\s*(.+)')
+            color_tone = self._extract_field(main_content, r'色调[:：]\s*(.+)')
+            
+            # 提取帧提取索引
+            extract_frame_str = self._extract_field(main_content, r'提取帧[:：]\s*(-?\d+)')
+            extract_frame_index = int(extract_frame_str) if extract_frame_str else -5
 
             # 提取对话
-            dialogues = self._extract_dialogues(content)
+            dialogues = self._extract_dialogues(main_content)
 
             # 提取旁白
-            narrations = self._extract_narrations(content)
+            narrations = self._extract_narrations(main_content)
 
             # 提取音效
-            sound_effects = self._extract_sound_effects(content)
+            sound_effects = self._extract_sound_effects(main_content)
 
             # 提取动作
-            action = self._extract_field(content, r'动作[:：]\s*(.+)')
+            action = self._extract_field(main_content, r'动作[:：]\s*(.+)')
 
             # 提取出现的角色
             characters = list(set([d.character for d in dialogues]))
+            
+            # 解析子场景
+            sub_scenes = []
+            for idx, match in enumerate(sub_scene_matches, 1):
+                sub_scene_text = match.group(1).strip()
+                sub_scene_data = self._parse_sub_scene_content(
+                    sub_scene_id=f"{scene_id}_sub_{str(idx).zfill(3)}",
+                    content=sub_scene_text
+                )
+                if sub_scene_data:
+                    sub_scenes.append(sub_scene_data)
 
             return Scene(
                 scene_id=scene_id,
@@ -241,11 +269,81 @@ class ScriptParserAgent(BaseAgent):
                 sound_effects=sound_effects,
                 action=action,
                 visual_style=visual_style,
-                color_tone=color_tone
+                color_tone=color_tone,
+                sub_scenes=sub_scenes,
+                extract_frame_index=extract_frame_index
             )
 
         except Exception as e:
             self.logger.error(f"Failed to parse scene {scene_id}: {e}")
+            return None
+
+    def _parse_sub_scene_content(self, sub_scene_id: str, content: str) -> Optional[SubScene]:
+        """
+        解析子场景内容
+        
+        Args:
+            sub_scene_id: 子场景ID
+            content: 子场景文本内容
+            
+        Returns:
+            SubScene对象或None
+        """
+        try:
+            # 提取子场景名称（从第一行）
+            first_line = content.split('\n')[0]
+            sub_scene_name_match = re.search(r'###\s*子场景[^：:]+[：:]\s*(.+)', first_line)
+            
+            # 提取子场景属性
+            description = self._extract_field(content, r'描述[:：]\s*(.+)')
+            if not description and sub_scene_name_match:
+                # 如果没有描述字段，使用子场景名称作为描述
+                description = sub_scene_name_match.group(1).strip()
+            
+            action = self._extract_field(content, r'动作[:：]\s*(.+)')
+            
+            # 提取镜头参数（可选，继承父场景）
+            duration_str = self._extract_field(content, r'时长[:：]\s*([\d.]+)')
+            duration = float(duration_str) if duration_str else 3.0
+            
+            shot_type_str = self._extract_field(content, r'镜头[:：]\s*(.+)')
+            shot_type = self._parse_shot_type(shot_type_str) if shot_type_str else None
+            
+            camera_movement_str = self._extract_field(content, r'运镜[:：]\s*(.+)')
+            camera_movement = self._parse_camera_movement(camera_movement_str) if camera_movement_str else None
+            
+            visual_style = self._extract_field(content, r'风格[:：]\s*(.+)')
+            color_tone = self._extract_field(content, r'色调[:：]\s*(.+)')
+            
+            # 提取对话
+            dialogues = self._extract_dialogues(content)
+            
+            # 提取旁白
+            narrations = self._extract_narrations(content)
+            
+            # 提取音效
+            sound_effects = self._extract_sound_effects(content)
+            
+            if not description:
+                self.logger.warning(f"Sub-scene {sub_scene_id} has no description")
+                return None
+            
+            return SubScene(
+                sub_scene_id=sub_scene_id,
+                description=description,
+                action=action,
+                shot_type=shot_type,
+                camera_movement=camera_movement,
+                duration=duration,
+                dialogues=dialogues,
+                narrations=narrations,
+                sound_effects=sound_effects,
+                visual_style=visual_style,
+                color_tone=color_tone
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to parse sub-scene {sub_scene_id}: {e}")
             return None
 
     def _extract_field(self, text: str, pattern: str) -> Optional[str]:
@@ -271,7 +369,7 @@ class ScriptParserAgent(BaseAgent):
 
             # 跳过字段标记行
             if any(keyword in line for keyword in
-                   ['地点', '时间', '天气', '氛围', '描述', '镜头', '时长', '运镜', '风格', '色调', '动作']):
+                   ['地点', '时间', '天气', '氛围', '描述', '镜头', '时长', '运镜', '风格', '色调', '动作', '提取帧']):
                 continue
 
             # 跳过旁白和音效行（支持带参数的格式）

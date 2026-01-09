@@ -1,10 +1,36 @@
 """LLM API service client - 用于提示词优化"""
 import httpx
 import asyncio
-from typing import Dict, Any, Optional, List
+import re
+from typing import Dict, Any, Optional, List, Literal
 from config.settings import settings
 from utils.retry import async_retry
 import logging
+
+
+def detect_language(text: str) -> Literal["zh", "en"]:
+    """
+    检测文本的主要语言
+
+    Args:
+        text: 要检测的文本
+
+    Returns:
+        "zh" 表示中文，"en" 表示英文
+    """
+    if not text or not text.strip():
+        return "en"
+
+    # 统计中文字符数量
+    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+    # 统计英文单词数量
+    english_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
+
+    # 如果中文字符数量超过英文单词数量，判定为中文
+    if chinese_chars > english_words:
+        return "zh"
+    else:
+        return "en"
 
 
 class LLMService:
@@ -122,10 +148,32 @@ class LLMService:
         Returns:
             优化后的提示词
         """
-        # 构建优化指令
-        system_prompt = """You are an expert prompt engineer specializing in optimizing prompts for image and video generation AI models. Your task is to enhance prompts to be more detailed, specific, and effective for generating high-quality visual content."""
+        # 检测原始提示词的语言
+        language = detect_language(original_prompt)
+        self.logger.info(f"Detected language: {language}")
 
-        user_message = f"""Please optimize the following prompt for {optimization_context}.
+        # 根据语言选择系统提示词和用户消息
+        if language == "zh":
+            system_prompt = """你是一位专业的提示词工程师，专门优化用于AI图片和视频生成的提示词。你的任务是增强提示词，使其更详细、更具体、更有效，以生成高质量的视觉内容。"""
+
+            user_message = f"""请优化以下用于{optimization_context}的提示词。
+
+原始提示词：{original_prompt}
+
+要求：
+1. 保持核心含义和意图
+2. 添加更多视觉细节和具体性
+3. 提高清晰度和结构
+4. 确保风格和语气的一致性
+5. 使其更适合AI视觉生成
+6. 关键：添加明确的指令"画面中不要出现任何文字、字母、水印"，以确保生成的图像不包含任何文本元素
+7. 只返回优化后的提示词，不要有任何解释或额外文本
+
+优化后的提示词："""
+        else:
+            system_prompt = """You are an expert prompt engineer specializing in optimizing prompts for image and video generation AI models. Your task is to enhance prompts to be more detailed, specific, and effective for generating high-quality visual content."""
+
+            user_message = f"""Please optimize the following prompt for {optimization_context}.
 
 Original prompt: {original_prompt}
 
@@ -145,7 +193,7 @@ Optimized prompt:"""
             {"role": "user", "content": user_message}
         ]
 
-        self.logger.info(f"Optimizing prompt for {optimization_context}")
+        self.logger.info(f"Optimizing prompt for {optimization_context} in {language}")
 
         try:
             result = await self.chat_completion(

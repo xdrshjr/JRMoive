@@ -29,9 +29,11 @@ class VideoGenerationAgent(BaseAgent):
         self.service = Veo3Service()
         self.logger = logging.getLogger(__name__)
 
-        # 并发限制（Veo3生成较慢，建议降低并发数）
-        max_concurrent = self.config.get('max_concurrent', 2)
+        # 并发限制 - 优先使用config中的配置，其次使用settings中的默认值
+        # Veo3生成较慢，建议降低并发数
+        max_concurrent = self.config.get('max_concurrent', settings.video_max_concurrent)
         self.limiter = ConcurrencyLimiter(max_concurrent)
+        self.logger.info(f"VideoGenerationAgent initialized with max_concurrent={max_concurrent}")
 
         # 提示词优化器
         self.prompt_optimizer = PromptOptimizer()
@@ -111,7 +113,7 @@ class VideoGenerationAgent(BaseAgent):
 
     async def _generate_video_clip(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        生成单个视频片段（带重试机制）
+        生成单个视频片段（带重试机制和智能提示词调整）
 
         Args:
             task_data: 包含image_result、scene和character_dict的字典
@@ -126,6 +128,9 @@ class VideoGenerationAgent(BaseAgent):
         image_path = image_result['image_path']
         scene_id = scene.scene_id
 
+        # 跟踪是否遇到音频过滤错误
+        audio_filtered_error = False
+
         # 带重试的视频生成
         for attempt in range(self.max_retries + 1):
             try:
@@ -134,9 +139,18 @@ class VideoGenerationAgent(BaseAgent):
                     scene,
                     scene_id,
                     character_dict,
-                    attempt
+                    attempt,
+                    remove_dialogues=audio_filtered_error  # 如果之前遇到音频过滤错误，移除台词
                 )
             except VideoGenerationError as e:
+                # 检查是否是音频过滤错误
+                if e.error_type == 'audio_filtered':
+                    audio_filtered_error = True
+                    self.logger.warning(
+                        f"Audio filtered error detected for scene {scene_id}. "
+                        f"Will retry without dialogues in next attempt."
+                    )
+
                 # 检查是否可重试
                 if not e.retryable:
                     self.logger.error(
@@ -147,9 +161,10 @@ class VideoGenerationAgent(BaseAgent):
                 # 检查是否还有重试次数
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (self.retry_backoff ** attempt)
+                    retry_strategy = " (will remove dialogues)" if audio_filtered_error else ""
                     self.logger.warning(
                         f"Video generation failed for scene {scene_id} "
-                        f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}. "
+                        f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}{retry_strategy}. "
                         f"Retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)
@@ -182,7 +197,8 @@ class VideoGenerationAgent(BaseAgent):
         scene: Scene,
         scene_id: str,
         character_dict: Optional[Dict[str, Any]],
-        attempt: int
+        attempt: int,
+        remove_dialogues: bool = False
     ) -> Dict[str, Any]:
         """
         执行一次视频片段生成
@@ -193,12 +209,21 @@ class VideoGenerationAgent(BaseAgent):
             scene_id: 场景ID
             character_dict: 角色字典
             attempt: 当前尝试次数（从0开始）
+            remove_dialogues: 是否移除台词（用于音频过滤错误重试）
 
         Returns:
             视频生成结果
         """
         log_prefix = f"[Attempt {attempt + 1}] " if attempt > 0 else ""
         self.logger.info(f"{log_prefix}Generating video for scene: {scene_id}")
+
+        # 如果需要移除台词，创建场景副本并清空对话
+        if remove_dialogues and scene.dialogues:
+            self.logger.info(f"Removing {len(scene.dialogues)} dialogue(s) from prompt due to audio filter")
+            # 创建场景副本
+            from copy import deepcopy
+            scene = deepcopy(scene)
+            scene.dialogues = []  # 清空对话列表
 
         # 生成视频提示词（包含对话信息）
         video_prompt = scene.to_video_prompt(character_dict)

@@ -12,10 +12,11 @@ import logging
 
 class VideoGenerationError(Exception):
     """视频生成基础异常"""
-    def __init__(self, message: str, error_code: str = "", retryable: bool = True):
+    def __init__(self, message: str, error_code: str = "", retryable: bool = True, error_type: str = ""):
         super().__init__(message)
         self.error_code = error_code
         self.retryable = retryable
+        self.error_type = error_type  # 错误类型：audio_filtered, content_policy, etc.
 
 
 class Veo3Service:
@@ -274,13 +275,17 @@ class Veo3Service:
 
                 self.logger.error(f"Video generation failed: code={error_code}, message={error_message}")
 
+                # 判断错误类型
+                error_type = self._classify_error_type(error_code, error_message)
+
                 # 判断是否可重试
                 retryable = self._is_retryable_error(error_code, error_message)
 
                 raise VideoGenerationError(
                     error_msg,
                     error_code=error_code,
-                    retryable=retryable
+                    retryable=retryable,
+                    error_type=error_type
                 )
 
             await asyncio.sleep(poll_interval)
@@ -320,6 +325,38 @@ class Veo3Service:
                 return video_url
 
         raise ValueError("Could not get video URL from content endpoint")
+
+    def _classify_error_type(self, error_code: str, error_message: str) -> str:
+        """
+        分类错误类型
+
+        Args:
+            error_code: 错误码
+            error_message: 错误消息
+
+        Returns:
+            错误类型字符串
+        """
+        error_upper = error_message.upper()
+        error_code_upper = error_code.upper()
+
+        # 音频过滤错误（通常是台词内容问题）
+        if 'AUDIO_FILTERED' in error_upper or 'AUDIO_FILTERED' in error_code_upper:
+            return 'audio_filtered'
+
+        # 内容策略违规
+        if 'CONTENT_POLICY' in error_upper or 'CONTENT_POLICY' in error_code_upper:
+            return 'content_policy'
+
+        # 版权违规
+        if 'COPYRIGHT' in error_upper or 'COPYRIGHT' in error_code_upper:
+            return 'copyright'
+
+        # 无效提示词
+        if 'INVALID_PROMPT' in error_upper or 'INVALID_PROMPT' in error_code_upper:
+            return 'invalid_prompt'
+
+        return 'unknown'
 
     def _is_retryable_error(self, error_code: str, error_message: str) -> bool:
         """

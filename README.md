@@ -229,12 +229,14 @@ image:
   model: "flux-dev"
   width: 1280
   height: 720
+  max_concurrent: 3  # 图片生成最大并发数 (1-10)，推荐3-5
 
 # 视频生成配置
 video:
   service: "veo3"
   duration: 5
   fps: 24
+  max_concurrent: 2  # 视频生成最大并发数 (1-5)，推荐2-3
 
 # 角色一致性配置
 characters:
@@ -249,6 +251,22 @@ output:
   filename: "output.mp4"
   format: "mp4"
 ```
+
+### 并发配置优化
+
+系统支持多线程并发生成图片和视频，可以显著提升生成速度：
+
+- **image.max_concurrent**: 图片生成最大并发数
+  - 范围: 1-10
+  - 推荐值: 3-5
+  - 说明: 值越大生成越快，但会增加API负载和内存占用
+
+- **video.max_concurrent**: 视频生成最大并发数
+  - 范围: 1-5
+  - 推荐值: 2-3
+  - 说明: 视频生成较慢，建议使用较低并发数
+
+**示例**: 如果设置 `image.max_concurrent: 3` 和 `video.max_concurrent: 3`，系统将同时生成3张图片和3个视频，大幅提升整体生成速度。
 
 ## 剧本格式
 

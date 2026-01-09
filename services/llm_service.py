@@ -112,7 +112,7 @@ class LLMService:
         temperature: float = 0.7
     ) -> str:
         """
-        使用LLM优化提示词
+        使用LLM优化提示词（通用方法，用于图片生成）
 
         Args:
             original_prompt: 原始提示词
@@ -135,7 +135,8 @@ Requirements:
 3. Improve clarity and structure
 4. Ensure consistency in style and tone
 5. Make it more suitable for AI visual generation
-6. Return ONLY the optimized prompt, without any explanations or additional text
+6. CRITICAL: Add explicit instruction "no text, no words, no letters, no watermarks in the image" to ensure the generated image contains NO text elements whatsoever
+7. Return ONLY the optimized prompt, without any explanations or additional text
 
 Optimized prompt:"""
 

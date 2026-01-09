@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     doubao_base_url: str = "https://ark.cn-beijing.volces.com"
     doubao_endpoint: str = "/api/v3/images/generations"
     doubao_model: str = "doubao-seedream-4-5-251128"
+    doubao_watermark: bool = False  # 是否在生成的图片中添加水印（false: 不添加水印）
 
     # Nano Banana Pro配置
     nano_banana_api_key: str = ""
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
     temp_dir: str = "./temp"
     log_level: str = "INFO"
     max_concurrent_requests: int = 5
+
+    # 图片生成并发配置
+    image_max_concurrent: int = 3  # 图片生成最大并发数 (1-10)
+
+    # 视频生成并发配置
+    video_max_concurrent: int = 2  # 视频生成最大并发数 (1-5)
 
     # 角色一致性配置
     enable_character_references: bool = True  # 是否启用角色参考图生成

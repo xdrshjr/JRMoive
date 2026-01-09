@@ -176,9 +176,12 @@ Sub-progress is mapped using `_create_sub_progress_callback()` to translate chil
 
 ### Concurrent Image/Video Generation
 Both image and video agents support concurrent processing with configurable limits:
-- Set via `max_concurrent` in config
+- Set via `max_concurrent` in config.yaml or settings.py
 - Uses `asyncio.Semaphore` for concurrency control
 - Progress callbacks track individual task completion
+- **Candidate Generation**: When character consistency judging is enabled, multiple candidate images are generated concurrently using `asyncio.gather()`
+- **Concurrent Judging**: LLM evaluation of candidates also runs concurrently, with all judge tasks executed in parallel
+- Example: With `candidate_images_per_scene: 3`, all 3 candidates are generated simultaneously, then all 3 are judged simultaneously
 
 ### Script Parsing Format
 Expected script format (see `examples/sample_scripts/programmer_day.txt`):

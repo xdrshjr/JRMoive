@@ -50,7 +50,9 @@ image:
   service: "doubao"
 
   # Maximum concurrent image generation tasks (1-10)
-  max_concurrent: 3
+  # Higher values = faster generation but more API load
+  # Recommended: 3-5 for most use cases
+  max_concurrent: 5
 
   # Image resolution
   width: 1920
@@ -61,9 +63,10 @@ image:
 
   # Advanced parameters
   cfg_scale: 7.5              # CFG scale (1.0-20.0)
-  steps: 50                   # Generation steps (20-100)
+  steps: 60                   # Generation steps (20-100)
   enable_image_to_image: true # Use character references for consistency
   reference_weight: 0.7       # Weight of character reference (0.0-1.0)
+  watermark: false
 
 # ==================== Video Generation ====================
 video:
@@ -71,7 +74,9 @@ video:
   service: "veo3"
 
   # Maximum concurrent video generation tasks (1-5)
-  max_concurrent: 2
+  # Higher values = faster generation but more API load
+  # Recommended: 2-3 for video generation (slower than images)
+  max_concurrent: 3
 
   # Video settings
   fps: 30                     # Frames per second (24-60)

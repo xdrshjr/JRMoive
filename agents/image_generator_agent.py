@@ -32,9 +32,10 @@ class ImageGenerationAgent(BaseAgent):
         self.service = ImageServiceFactory.create_service()
         self.logger = logging.getLogger(__name__)
 
-        # 并发控制
-        max_concurrent = self.config.get('max_concurrent', 3)
+        # 并发控制 - 优先使用config中的配置，其次使用settings中的默认值
+        max_concurrent = self.config.get('max_concurrent', settings.image_max_concurrent)
         self.limiter = ConcurrencyLimiter(max_concurrent)
+        self.logger.info(f"ImageGenerationAgent initialized with max_concurrent={max_concurrent}")
 
         # 速率限制（可选）
         if self.config.get('enable_rate_limit', False):
@@ -194,12 +195,13 @@ class ImageGenerationAgent(BaseAgent):
         else:
             return await self._generate_single_image(scene)
 
-    async def _generate_single_image(self, scene: Scene) -> Dict[str, Any]:
+    async def _generate_single_image(self, scene: Scene, candidate_index: Optional[int] = None) -> Dict[str, Any]:
         """
         生成单张图片（原有逻辑）
 
         Args:
             scene: 场景对象
+            candidate_index: 候选索引（可选），用于生成唯一文件名
 
         Returns:
             图片生成结果
@@ -274,6 +276,7 @@ class ImageGenerationAgent(BaseAgent):
             'seed': scene_seed,
             'cfg_scale': self.config.get('cfg_scale', 7.5),
             'steps': self.config.get('steps', 50),
+            'watermark': self.config.get('watermark', settings.doubao_watermark),  # 传递水印参数
         }
 
         # 图生图参数
@@ -286,9 +289,12 @@ class ImageGenerationAgent(BaseAgent):
             else:
                 self.logger.warning(f"Current service does not support image-to-image, falling back to text-to-image")
 
-        # 生成文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{scene.scene_id}_{timestamp}.png"
+        # 生成文件名（添加微秒和候选索引以确保唯一性）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")  # 添加微秒
+        if candidate_index is not None:
+            filename = f"{scene.scene_id}_{timestamp}_candidate_{candidate_index}.png"
+        else:
+            filename = f"{scene.scene_id}_{timestamp}.png"
         save_path = self.output_dir / filename
 
         # 调用服务生成并保存图片
@@ -311,7 +317,7 @@ class ImageGenerationAgent(BaseAgent):
 
     async def _generate_with_judging(self, scene: Scene) -> Dict[str, Any]:
         """
-        生成多个候选图片并使用LLM评分选择最佳
+        生成多个候选图片并使用LLM评分选择最佳（并发生成和评分）
 
         Args:
             scene: 场景对象
@@ -336,36 +342,33 @@ class ImageGenerationAgent(BaseAgent):
             self.logger.warning(f"No reference image for character {primary_character}, falling back to single generation")
             return await self._generate_single_image(scene)
 
-        # 生成多个候选图片
-        candidates = []
+        # 并发生成多个候选图片
+        self.logger.info(f"Generating {self.candidate_count} candidates concurrently")
+
+        # 创建生成任务列表（传递候选索引）
+        generation_tasks = [
+            self._generate_single_image(scene, candidate_index=i)
+            for i in range(self.candidate_count)
+        ]
+
+        # 并发执行所有生成任务
+        candidates = await asyncio.gather(*generation_tasks)
+
+        # 提取候选图片路径（无需重命名，文件名已包含候选索引）
         candidate_paths = []
-
-        for i in range(self.candidate_count):
-            self.logger.info(f"Generating candidate {i+1}/{self.candidate_count}")
-
-            # 生成单张图片
-            result = await self._generate_single_image(scene)
-
-            # 保存候选信息
+        for i, result in enumerate(candidates):
             candidate_path = Path(result['image_path'])
-            candidates.append(result)
             candidate_paths.append(candidate_path)
+            self.logger.info(f"Generated candidate {i+1}/{self.candidate_count}: {candidate_path.name}")
 
-            # 为候选图片重命名（添加候选索引）
-            new_filename = candidate_path.stem + f"_candidate_{i}" + candidate_path.suffix
-            new_path = candidate_path.parent / new_filename
-            candidate_path.rename(new_path)
-            result['image_path'] = str(new_path)
-            candidate_paths[i] = new_path
-
-        # 使用LLM评分
-        self.logger.info(f"Judging {len(candidates)} candidates")
+        # 使用LLM并发评分
+        self.logger.info(f"Judging {len(candidates)} candidates concurrently")
 
         # 获取场景提示词
         scene_prompt = scene.to_image_prompt(self.character_dict)
 
-        # 批量评分
-        judge_results = await self.judge_service.batch_judge(
+        # 并发批量评分
+        judge_results = await self._concurrent_batch_judge(
             reference_image_path=Path(reference_image_path),
             candidate_images=candidate_paths,
             scene_prompt=scene_prompt,
@@ -377,10 +380,20 @@ class ImageGenerationAgent(BaseAgent):
         best_index = best_result['candidate_index']
         best_candidate = candidates[best_index]
 
-        # 将最佳候选重命名为最终文件
+        # 将最佳候选重命名为最终文件（移除候选索引和微秒）
         best_path = Path(best_candidate['image_path'])
-        final_filename = best_path.stem.replace(f"_candidate_{best_index}", "") + best_path.suffix
+        # 从文件名中移除 _微秒_candidate_索引 部分
+        # 例如: scene_001_20260109_021920_123456_candidate_0.png -> scene_001_20260109_021920.png
+        import re
+        final_filename = re.sub(r'_\d{6}_candidate_\d+', '', best_path.stem) + best_path.suffix
         final_path = best_path.parent / final_filename
+
+        # 如果目标文件已存在，添加时间戳避免覆盖
+        if final_path.exists():
+            timestamp_suffix = datetime.now().strftime("_%f")
+            final_filename = re.sub(r'_\d{6}_candidate_\d+', timestamp_suffix, best_path.stem) + best_path.suffix
+            final_path = best_path.parent / final_filename
+
         best_path.rename(final_path)
 
         # 删除其他候选图片（可选，根据配置决定）
@@ -405,6 +418,47 @@ class ImageGenerationAgent(BaseAgent):
         )
 
         return best_candidate
+
+    async def _concurrent_batch_judge(
+        self,
+        reference_image_path: Path,
+        candidate_images: List[Path],
+        scene_prompt: str,
+        character_name: str
+    ) -> List[Dict[str, Any]]:
+        """
+        并发批量评估多个候选图片
+
+        Args:
+            reference_image_path: 角色参考图路径
+            candidate_images: 候选场景图片路径列表
+            scene_prompt: 场景提示词
+            character_name: 角色名称
+
+        Returns:
+            评分结果列表
+        """
+        # 创建评分任务列表
+        judge_tasks = [
+            self.judge_service.judge_character_consistency(
+                reference_image_path,
+                scene_image_path,
+                scene_prompt,
+                character_name
+            )
+            for scene_image_path in candidate_images
+        ]
+
+        # 并发执行所有评分任务
+        results = await asyncio.gather(*judge_tasks)
+
+        # 添加候选索引和图片路径
+        for i, result in enumerate(results):
+            result['candidate_index'] = i
+            result['image_path'] = str(candidate_images[i])
+            self.logger.info(f"Candidate {i+1} judged with score: {result.get('score', 0)}/100")
+
+        return results
 
     async def _call_progress_callback(self, progress: float, message: str):
         """调用进度回调"""

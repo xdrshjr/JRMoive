@@ -192,7 +192,7 @@ class DoubaoService:
             "size": f"{width}x{height}" if width == height else "2K",  # 豆包支持方形或2K
             "response_format": "url",  # 返回URL
             "stream": False,
-            "watermark": filtered_kwargs.get('watermark', True)
+            "watermark": filtered_kwargs.get('watermark', settings.doubao_watermark)  # 使用配置的水印设置，默认false
         }
 
         # 图生图参数

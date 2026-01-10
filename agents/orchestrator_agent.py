@@ -112,6 +112,12 @@ class DramaGenerationOrchestrator(BaseAgent):
         self.start_time = datetime.now()
         self.current_task_id = f"drama_{self.start_time.strftime('%Y%m%d_%H%M%S')}"
 
+        # 启动全局进度条（如果启用）
+        if self.config.get('enable_global_progress_bar', False):
+            from utils.global_progress_display import get_global_progress_display
+            progress_display = get_global_progress_display()
+            progress_display.start()
+
         try:
             # 步骤1：解析剧本 (0% -> 5%)
             await self._update_progress(0, "Starting drama generation...")
@@ -223,11 +229,24 @@ class DramaGenerationOrchestrator(BaseAgent):
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
             self.logger.info(f"Total generation time: {elapsed_time:.2f}s")
 
+            # 完成全局进度条（如果启用）
+            if self.config.get('enable_global_progress_bar', False):
+                from utils.global_progress_display import get_global_progress_display
+                progress_display = get_global_progress_display()
+                progress_display.finish()
+
             await self.on_complete(final_video_path)
             return final_video_path
 
         except Exception as e:
             self.logger.error(f"Drama generation failed: {e}")
+
+            # 完成全局进度条（如果启用）
+            if self.config.get('enable_global_progress_bar', False):
+                from utils.global_progress_display import get_global_progress_display
+                progress_display = get_global_progress_display()
+                progress_display.finish()
+
             await self.on_error(e)
             raise
 
@@ -290,6 +309,14 @@ class DramaGenerationOrchestrator(BaseAgent):
 
             self.logger.info(f"Logging configured: level={log_level}, file={log_file}")
 
+        # 如果启用了全局进度条，配置日志系统
+        if self.config.get('enable_global_progress_bar', False):
+            from utils.global_progress_display import configure_logging_with_progress_bar
+            configure_logging_with_progress_bar(
+                log_level=numeric_level,
+                log_file=str(log_file)
+            )
+
     async def _update_progress(self, percent: float, message: str):
         """
         更新进度
@@ -299,6 +326,12 @@ class DramaGenerationOrchestrator(BaseAgent):
             message: 进度消息
         """
         self.logger.info(f"Progress: {percent}% - {message}")
+
+        # 更新全局进度条（如果启用）
+        if self.config.get('enable_global_progress_bar', False):
+            from utils.global_progress_display import get_global_progress_display
+            progress_display = get_global_progress_display()
+            progress_display.update(percent, message)
 
         if self.progress_callback:
             if asyncio.iscoroutinefunction(self.progress_callback):

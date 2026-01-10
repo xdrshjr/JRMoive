@@ -198,6 +198,9 @@ class ProjectConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig, description="Logging configuration")
     api_keys: APIKeysConfig = Field(default_factory=APIKeysConfig, description="API keys configuration (optional, falls back to environment variables)")
 
+    # UI settings
+    enable_global_progress_bar: bool = Field(True, description="Enable global progress bar display at bottom of screen")
+
     @model_validator(mode='after')
     def validate_cross_config(self):
         """Validate cross-configuration dependencies"""
@@ -297,4 +300,7 @@ class ProjectConfig(BaseModel):
             # Logging settings
             'log_level': self.logging.level,
             'log_file': self.logging.file,
+
+            # UI settings
+            'enable_global_progress_bar': self.enable_global_progress_bar,
         }

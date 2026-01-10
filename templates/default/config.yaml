@@ -76,7 +76,7 @@ video:
   # Maximum concurrent video generation tasks (1-5)
   # Higher values = faster generation but more API load
   # Recommended: 2-3 for video generation (slower than images)
-  max_concurrent: 3
+  max_concurrent: 2
 
   # Video settings
   fps: 30                     # Frames per second (24-60)
@@ -127,6 +127,12 @@ logging:
   level: "INFO"                # "DEBUG", "INFO", "WARNING", "ERROR"
   save_to_file: true
   file: "outputs/generation.log"  # Log file path (relative to project folder)
+
+# ==================== UI Configuration ====================
+# Enable global progress bar display at bottom of screen
+# When enabled, progress bar is shown at the bottom with logs above
+# When disabled, uses traditional log-only output
+enable_global_progress_bar: true
 
 # ==================== API Keys Configuration ====================
 # You can configure API keys here OR in the .env file

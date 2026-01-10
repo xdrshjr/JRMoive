@@ -107,6 +107,9 @@ class ProjectRunner:
 
             # Output directory (project-specific)
             'output_dir': config.output.directory,
+
+            # Global progress bar
+            'enable_global_progress_bar': config.enable_global_progress_bar,
         }
 
         return orchestrator_config

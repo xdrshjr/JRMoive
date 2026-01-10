@@ -116,6 +116,9 @@ class SubScene(BaseModel):
     visual_style: Optional[str] = Field(None, description="视觉风格（cinematic, anime等）")
     color_tone: Optional[str] = Field(None, description="色调（warm, cool, vibrant等）")
     
+    # 自定义基础图片
+    base_image_filename: Optional[str] = Field(None, description="自定义场景基础图文件名（从项目scenes文件夹加载）")
+    
     @field_validator('duration')
     @classmethod
     def validate_duration(cls, v):
@@ -247,6 +250,9 @@ class Scene(BaseModel):
     # 子场景支持
     sub_scenes: List[SubScene] = Field(default_factory=list, description="子场景列表")
     extract_frame_index: Optional[int] = Field(default=5, description="从基础视频提取帧的位置（负数表示从末尾倒数）")
+    
+    # 自定义基础图片
+    base_image_filename: Optional[str] = Field(None, description="自定义场景基础图文件名（从项目scenes文件夹加载）")
 
     @field_validator('duration')
     @classmethod

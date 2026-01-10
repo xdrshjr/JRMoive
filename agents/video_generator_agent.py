@@ -41,6 +41,9 @@ class VideoGenerationAgent(BaseAgent):
         
         # FFmpeg处理器（用于帧提取和视频拼接）
         self.ffmpeg_processor = FFmpegProcessor()
+        
+        # 项目路径（用于加载自定义场景图）
+        self.project_path: Optional[Path] = None
 
         # 重试配置
         self.max_retries = self.config.get(
@@ -55,6 +58,16 @@ class VideoGenerationAgent(BaseAgent):
             'retry_backoff',
             settings.video_generation_retry_backoff
         )
+    
+    def set_project_path(self, project_path: Path):
+        """
+        设置项目路径，用于加载自定义场景图
+        
+        Args:
+            project_path: 项目文件夹路径
+        """
+        self.project_path = project_path
+        self.logger.info(f"Project path set to: {project_path}")
 
     async def execute(
         self,
@@ -370,6 +383,19 @@ class VideoGenerationAgent(BaseAgent):
         sub_scene_id = sub_scene.sub_scene_id
         self.logger.info(f"Generating sub-scene video: {sub_scene_id}")
         
+        # 检查子场景是否有自定义基础图
+        image_path_to_use = extracted_frame_path
+        if sub_scene.base_image_filename:
+            custom_image_path = await self._load_custom_subscene_image(sub_scene)
+            if custom_image_path:
+                image_path_to_use = custom_image_path
+                self.logger.info(f"Using custom base image for sub-scene: {custom_image_path}")
+            else:
+                self.logger.warning(
+                    f"Failed to load custom base image for sub-scene {sub_scene_id}, "
+                    f"using extracted frame instead"
+                )
+        
         # 生成子场景视频提示词
         video_prompt = sub_scene.to_video_prompt(parent_scene, character_dict)
         self.logger.debug(f"Sub-scene original prompt: {video_prompt}")
@@ -394,7 +420,7 @@ class VideoGenerationAgent(BaseAgent):
         
         # 调用Veo3 API生成子场景视频
         api_result = await self.service.image_to_video(
-            image_path=extracted_frame_path,
+            image_path=image_path_to_use,
             **video_config
         )
         
@@ -416,6 +442,53 @@ class VideoGenerationAgent(BaseAgent):
             'api_response': api_result,
             'dialogues': [d.model_dump() for d in sub_scene.dialogues]
         }
+    
+    async def _load_custom_subscene_image(self, sub_scene: SubScene) -> Optional[str]:
+        """
+        加载子场景的自定义基础图
+        
+        Args:
+            sub_scene: 子场景对象
+            
+        Returns:
+            自定义图片路径，如果加载失败返回None
+        """
+        if not self.project_path:
+            self.logger.error(
+                f"Sub-scene {sub_scene.sub_scene_id} specifies custom base image "
+                f"'{sub_scene.base_image_filename}', but project_path is not set."
+            )
+            return None
+        
+        # 构建自定义场景图路径
+        scenes_folder = self.project_path / "scenes"
+        custom_image_path = scenes_folder / sub_scene.base_image_filename
+        
+        if not custom_image_path.exists():
+            self.logger.error(
+                f"Custom base image not found for sub-scene {sub_scene.sub_scene_id}: "
+                f"{custom_image_path}"
+            )
+            return None
+        
+        self.logger.info(
+            f"Loading custom base image for sub-scene {sub_scene.sub_scene_id}: "
+            f"{custom_image_path}"
+        )
+        
+        # 复制图片到输出目录
+        import shutil
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{sub_scene.sub_scene_id}_{timestamp}_custom.png"
+        save_path = self.output_dir / filename
+        
+        try:
+            shutil.copy2(custom_image_path, save_path)
+            self.logger.info(f"Custom base image copied to: {save_path}")
+            return str(save_path)
+        except Exception as e:
+            self.logger.error(f"Failed to copy custom base image: {e}")
+            return None
 
     async def _generate_video_clip_once(
         self,

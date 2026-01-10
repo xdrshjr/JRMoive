@@ -226,6 +226,12 @@ class ScriptParserAgent(BaseAgent):
             # 提取帧提取索引
             extract_frame_str = self._extract_field(main_content, r'提取帧[:：]\s*(-?\d+)')
             extract_frame_index = int(extract_frame_str) if extract_frame_str else -5
+            
+            # 提取自定义场景图
+            base_image_filename = self._extract_field(main_content, r'场景图[:：]\s*(.+)')
+            if base_image_filename:
+                base_image_filename = base_image_filename.strip()
+                self.logger.info(f"Scene {scene_id} has custom base image: {base_image_filename}")
 
             # 提取对话
             dialogues = self._extract_dialogues(main_content)
@@ -271,7 +277,8 @@ class ScriptParserAgent(BaseAgent):
                 visual_style=visual_style,
                 color_tone=color_tone,
                 sub_scenes=sub_scenes,
-                extract_frame_index=extract_frame_index
+                extract_frame_index=extract_frame_index,
+                base_image_filename=base_image_filename
             )
 
         except Exception as e:
@@ -315,6 +322,12 @@ class ScriptParserAgent(BaseAgent):
             visual_style = self._extract_field(content, r'风格[:：]\s*(.+)')
             color_tone = self._extract_field(content, r'色调[:：]\s*(.+)')
             
+            # 提取自定义场景图
+            base_image_filename = self._extract_field(content, r'场景图[:：]\s*(.+)')
+            if base_image_filename:
+                base_image_filename = base_image_filename.strip()
+                self.logger.info(f"Sub-scene {sub_scene_id} has custom base image: {base_image_filename}")
+            
             # 提取对话
             dialogues = self._extract_dialogues(content)
             
@@ -339,7 +352,8 @@ class ScriptParserAgent(BaseAgent):
                 narrations=narrations,
                 sound_effects=sound_effects,
                 visual_style=visual_style,
-                color_tone=color_tone
+                color_tone=color_tone,
+                base_image_filename=base_image_filename
             )
             
         except Exception as e:

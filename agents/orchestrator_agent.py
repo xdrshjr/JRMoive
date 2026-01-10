@@ -25,7 +25,8 @@ class DramaGenerationOrchestrator(BaseAgent):
         self,
         agent_id: str = "orchestrator",
         config: Dict[str, Any] = None,
-        output_dir: Optional[Path] = None
+        output_dir: Optional[Path] = None,
+        project_path: Optional[Path] = None
     ):
         super().__init__(agent_id, config or {})
         self.logger = logging.getLogger(__name__)
@@ -33,6 +34,9 @@ class DramaGenerationOrchestrator(BaseAgent):
         # 设置输出目录（如果提供）
         self.output_dir = output_dir or Path("./output")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 设置项目路径（用于加载自定义场景图）
+        self.project_path = project_path
 
         # 设置项目特定日志
         self._setup_logging()
@@ -74,6 +78,12 @@ class DramaGenerationOrchestrator(BaseAgent):
             config=self.config.get('composer', {}),
             output_dir=final_dir
         )
+        
+        # 传递项目路径到agents（如果可用）
+        if self.project_path:
+            self.image_generator.set_project_path(self.project_path)
+            self.video_generator.set_project_path(self.project_path)
+            self.logger.info(f"Project path passed to agents: {self.project_path}")
 
         # 一致性控制开关
         self.enable_character_references = self.config.get(
@@ -185,10 +195,21 @@ class DramaGenerationOrchestrator(BaseAgent):
                 reference_data=reference_data,
                 progress_callback=self._create_sub_progress_callback(15, 45)
             )
+            
+            # 统计使用自定义基础图的场景数量
+            custom_image_count = sum(1 for result in image_results if result.get('from_custom_base', False))
+            ai_generated_count = len(image_results) - custom_image_count
+            
+            if custom_image_count > 0:
+                self.logger.info(
+                    f"Image generation complete: {ai_generated_count} AI-generated, "
+                    f"{custom_image_count} from custom base images"
+                )
 
             await self._update_progress(
                 45,
-                f"Generated {len(image_results)} consistent images"
+                f"Generated {len(image_results)} consistent images "
+                f"({custom_image_count} custom)" if custom_image_count > 0 else f"Generated {len(image_results)} consistent images"
             )
 
             # 步骤4：生成视频片段 (45% -> 75%)

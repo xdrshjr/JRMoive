@@ -53,6 +53,9 @@ class ImageGenerationAgent(BaseAgent):
         # 一致性增强器（由外部设置）
         self.character_enhancer: Optional[CharacterDescriptionEnhancer] = None
         self.character_dict: Optional[Dict[str, Character]] = None
+        
+        # 项目路径（用于加载自定义场景图）
+        self.project_path: Optional[Path] = None
 
         # 图生图配置
         self.enable_image_to_image = self.config.get('enable_image_to_image', True)
@@ -74,6 +77,16 @@ class ImageGenerationAgent(BaseAgent):
                 self.logger.warning(f"Failed to initialize LLM judge service: {e}. Disabling judge.")
                 self.enable_judge = False
                 self.judge_service = None
+    
+    def set_project_path(self, project_path: Path):
+        """
+        设置项目路径，用于加载自定义场景图
+        
+        Args:
+            project_path: 项目文件夹路径
+        """
+        self.project_path = project_path
+        self.logger.info(f"Project path set to: {project_path}")
 
     async def execute(self, scenes: List[Scene]) -> List[Dict[str, Any]]:
         """
@@ -207,6 +220,10 @@ class ImageGenerationAgent(BaseAgent):
             图片生成结果
         """
         self.logger.info(f"Generating image for scene: {scene.scene_id}")
+        
+        # 检查是否有自定义场景基础图
+        if scene.base_image_filename:
+            return await self._load_custom_scene_image(scene, candidate_index)
 
         # 使用速率限制（如果启用）
         if self.rate_limiter:
@@ -314,6 +331,77 @@ class ImageGenerationAgent(BaseAgent):
             'config': image_config,
             'api_response': result.get('api_response')
         }
+    
+    async def _load_custom_scene_image(self, scene: Scene, candidate_index: Optional[int] = None) -> Dict[str, Any]:
+        """
+        加载用户自定义的场景基础图
+        
+        Args:
+            scene: 场景对象
+            candidate_index: 候选索引（可选）
+            
+        Returns:
+            图片加载结果
+        """
+        if not self.project_path:
+            self.logger.error(
+                f"Scene {scene.scene_id} specifies custom base image '{scene.base_image_filename}', "
+                f"but project_path is not set. Falling back to AI generation."
+            )
+            # 临时移除base_image_filename以避免递归
+            original_filename = scene.base_image_filename
+            scene.base_image_filename = None
+            result = await self._generate_single_image(scene, candidate_index)
+            scene.base_image_filename = original_filename
+            return result
+        
+        # 构建自定义场景图路径
+        scenes_folder = self.project_path / "scenes"
+        custom_image_path = scenes_folder / scene.base_image_filename
+        
+        if not custom_image_path.exists():
+            self.logger.error(
+                f"Custom base image not found: {custom_image_path}. "
+                f"Scene {scene.scene_id} will fall back to AI generation."
+            )
+            # 临时移除base_image_filename以避免递归
+            original_filename = scene.base_image_filename
+            scene.base_image_filename = None
+            result = await self._generate_single_image(scene, candidate_index)
+            scene.base_image_filename = original_filename
+            return result
+        
+        self.logger.info(f"Loading custom base image for scene {scene.scene_id}: {custom_image_path}")
+        
+        # 复制图片到输出目录
+        import shutil
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        if candidate_index is not None:
+            filename = f"{scene.scene_id}_{timestamp}_candidate_{candidate_index}_custom.png"
+        else:
+            filename = f"{scene.scene_id}_{timestamp}_custom.png"
+        save_path = self.output_dir / filename
+        
+        try:
+            shutil.copy2(custom_image_path, save_path)
+            self.logger.info(f"Custom base image copied to: {save_path}")
+            
+            return {
+                'scene_id': scene.scene_id,
+                'image_path': str(save_path),
+                'from_custom_base': True,
+                'custom_image_source': str(custom_image_path),
+                'prompt': f"Custom base image: {scene.base_image_filename}",
+                'original_prompt': scene.to_image_prompt(self.character_dict),
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to copy custom base image: {e}. Falling back to AI generation.")
+            # 临时移除base_image_filename以避免递归
+            original_filename = scene.base_image_filename
+            scene.base_image_filename = None
+            result = await self._generate_single_image(scene, candidate_index)
+            scene.base_image_filename = original_filename
+            return result
 
     async def _generate_with_judging(self, scene: Scene) -> Dict[str, Any]:
         """

@@ -201,7 +201,8 @@ class ProjectRunner:
             output_dir = Path(self.project_config.output.directory)
             self.orchestrator = DramaGenerationOrchestrator(
                 config=self.orchestrator_config,
-                output_dir=output_dir
+                output_dir=output_dir,
+                project_path=self.project_path
             )
 
             # Wrap progress callback to track timing

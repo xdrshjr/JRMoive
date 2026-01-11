@@ -1,0 +1,2 @@
+"""Backend middleware initialization"""
+

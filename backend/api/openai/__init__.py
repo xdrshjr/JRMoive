@@ -1,0 +1,2 @@
+"""OpenAI API module initialization"""
+

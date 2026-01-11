@@ -1,0 +1,32 @@
+# FastAPI Backend Dependencies
+
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Configuration & Environment
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Logging
+loguru==0.7.2
+
+# HTTP Client (for service wrappers)
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Task Storage (optional Redis support)
+redis==5.0.1
+aioredis==2.0.1
+
+# Data Processing
+pyyaml==6.0.1
+
+# Image Processing
+Pillow==10.1.0
+
+# Utilities
+aiofiles==23.2.1
+

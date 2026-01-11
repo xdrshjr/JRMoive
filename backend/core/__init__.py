@@ -1,0 +1,2 @@
+"""Backend core module initialization"""
+

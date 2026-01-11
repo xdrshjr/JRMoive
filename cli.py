@@ -186,7 +186,7 @@ def cmd_init(args):
         print_success("Created folder structure")
         print()
         print_info("Next steps:")
-        print(f"  1. Add your script to {project_path / 'script.txt'}")
+        print(f"  1. Add your script to {project_path / 'script.yaml'}")
         print(f"  2. Review config at {project_path / 'config.yaml'}")
         print(f"  3. Run: python cli.py generate {project_path}")
 

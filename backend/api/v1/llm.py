@@ -63,6 +63,26 @@ async def chat_completion(request: ChatRequest):
             max_tokens=request.max_tokens
         )
         
+        logger.debug(f"Raw LLM response: {response}")
+        
+        # Extract content from the response
+        # The LLM service returns OpenAI-format response with nested structure
+        content = ""
+        if "choices" in response and len(response["choices"]) > 0:
+            # Response already in OpenAI format from LLM service
+            content = response["choices"][0]["message"]["content"]
+            logger.debug(f"Extracted content from choices: {content[:100]}...")
+        elif "content" in response:
+            # Fallback: direct content field
+            content = response["content"]
+            logger.debug(f"Extracted content from direct field: {content[:100]}...")
+        elif "message" in response:
+            # Fallback: message field
+            content = response["message"]
+            logger.debug(f"Extracted content from message field: {content[:100]}...")
+        else:
+            logger.warning(f"No content found in response, response keys: {response.keys()}")
+        
         # Format response to match OpenAI format
         formatted_response = {
             "id": f"chatcmpl-{int(time.time())}",
@@ -74,7 +94,7 @@ async def chat_completion(request: ChatRequest):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": response.get("content", response.get("message", ""))
+                        "content": content
                     },
                     "finish_reason": "stop"
                 }
@@ -86,7 +106,7 @@ async def chat_completion(request: ChatRequest):
             })
         }
         
-        logger.info("Chat completion successful")
+        logger.info(f"Chat completion successful | content_length={len(content)} chars")
         return formatted_response
         
     except ServiceException as e:

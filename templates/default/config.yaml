@@ -10,8 +10,8 @@ project:
 
 # ==================== Script Configuration ====================
 script:
-  file: "script.txt"  # Script filename (relative to project folder)
-  encoding: "utf-8"   # Script file encoding
+  file: "script.yaml"  # Script filename (relative to project folder)
+  encoding: "utf-8"    # Script file encoding
 
 # ==================== Character Configuration ====================
 characters:

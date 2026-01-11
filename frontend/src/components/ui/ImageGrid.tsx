@@ -1,5 +1,6 @@
 import React from 'react';
 import Image from 'next/image';
+import { isValidImageUrl } from '@/lib/imageHelpers';
 
 interface ImageOption {
   id: string;
@@ -26,9 +27,20 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
     4: 'grid-cols-4',
   }[columns] || 'grid-cols-3';
 
+  // Filter out any invalid images
+  const validImages = images.filter((img) => isValidImageUrl(img.url));
+
+  if (validImages.length === 0) {
+    return (
+      <div className="p-4 text-center text-text-secondary border border-text-tertiary rounded-apple-md">
+        <p>No valid images to display</p>
+      </div>
+    );
+  }
+
   return (
     <div className={`grid ${gridClasses} gap-4`}>
-      {images.map((image) => (
+      {validImages.map((image) => (
         <div
           key={image.id}
           onClick={() => onSelect(image.id)}
@@ -45,6 +57,7 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
             fill
             className="object-cover"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            unoptimized={image.url.startsWith('data:')}
           />
           {image.selected && (
             <div className="absolute top-2 right-2 bg-apple-blue text-white rounded-full w-8 h-8 flex items-center justify-center">

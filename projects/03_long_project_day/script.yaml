@@ -1,0 +1,98 @@
+# NOTE: This is a placeholder. The full script conversion from text to YAML format
+# needs to be completed manually or the old script.txt can be used as reference.
+# Please convert the script.txt file to this YAML format following the structure below.
+
+title: "AI特工小明：二战奇兵"
+author: "AI编剧"
+description: "小明穿越回二战，用AI助手指导盟军，以离谱方式击败德军"
+
+characters:
+  - name: "小明"
+    description: "现代程序员，意外穿越者，台词为英语"
+    age: 28
+    gender: "male"
+    appearance: "程序员打扮，穿着睡衣"
+  
+  - name: "AI助手"
+    description: "小明的AI Agent，仅以语音和屏幕文字形式出现"
+    age: null
+    gender: null
+    appearance: "虚拟助手，无实体"
+  
+  - name: "盟军指挥官"
+    description: "严肃但逐渐困惑的军官"
+    age: 45
+    gender: "male"
+    appearance: "军装，严肃表情"
+  
+  - name: "德军士兵"
+    description: "傲慢但最终崩溃的敌人"
+    age: 30
+    gender: "male"
+    appearance: "德军制服"
+
+scenes:
+  # TODO: Convert all scenes from script.txt to YAML format
+  # Follow the structure shown in projects/01_simple_project_day/script.yaml
+  # Each scene should have: scene_id, location, time, weather, atmosphere, description,
+  # shot_type, camera_movement, duration, visual_style, color_tone, action, 
+  # extract_frame_index, base_image_filename, characters, dialogues, narrations,
+  # sound_effects, and sub_scenes
+  - scene_id: "scene_001"
+    location: "诺曼底海滩附近灌木丛"
+    time: "黎明"
+    weather: "雾蒙蒙"
+    atmosphere: "紧张混乱"
+    description: "小明穿着睡衣，一脸懵逼地蹲在灌木丛后，周围是枪炮声和士兵的呼喊。他手里紧握着一部未来感十足的透明平板电脑"
+    shot_type: "medium_shot"
+    camera_movement: "pan"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "desaturated"
+    action: "惊慌失措地查看平板，又看看周围战场"
+    extract_frame_index: -6
+    base_image_filename: "scene_001_base.png"
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "What the... where am I? This looks like a WWII movie set! But the bullets feel too real!"
+        emotion: "惊恐"
+        voice_style: "压低声音"
+    narrations:
+      - content: "三分钟前，小明还在测试他的新AI助手，一次代码错误让他和助手一起穿越到了历史上最著名的登陆日。"
+        voice_style: "幽默"
+    sound_effects:
+      - description: "远处炮弹爆炸声"
+        timing: 1.0
+      - description: "子弹呼啸而过"
+        timing: 5.0
+    sub_scenes:
+      - sub_scene_id: "scene_001_sub_001"
+        description: "平板电脑特写，屏幕亮起，显示\"AI助手已上线。检测到时空异常：公元1944年6月6日，法国诺曼底。\"界面简洁未来感十足"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 5.0
+        action: "小明颤抖的手指点击屏幕，AI助手界面展开"
+        visual_style: null
+        color_tone: null
+        base_image_filename: "scene_001_sub_001_base.png"
+        dialogues: []
+        narrations: []
+        sound_effects: []
+      
+      - sub_scene_id: "scene_001_sub_002"
+        description: "透过灌木缝隙，可见约一百米外有一个德军机枪堡垒，正在向海滩方向疯狂扫射"
+        shot_type: "long_shot"
+        camera_movement: "static"
+        duration: 5.0
+        action: "小明趴在地上，小心探头观察，又低头看平板"
+        visual_style: null
+        color_tone: null
+        base_image_filename: "scene_001_sub_002_base.png"
+        dialogues: []
+        narrations: []
+        sound_effects: []
+  
+  # TODO: Add remaining scenes from script.txt
+

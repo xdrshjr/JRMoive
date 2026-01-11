@@ -1,0 +1,73 @@
+# NOTE: This script uses custom base images for scenes.
+# Convert from script.txt following the YAML format structure.
+
+title: "氪金程序员的悲惨日常"
+author: "AI编剧"
+description: "讲述一个为了AI编程工具倾家荡产的程序员的黑色幽默故事"
+
+characters:
+  - name: "小明"
+    description: "28岁的前端开发者，头发凌乱，眼神疲惫，台词为中文"
+    age: 28
+    gender: "male"
+    appearance: "头发凌乱，眼神疲惫"
+
+scenes:
+  - scene_id: "scene_001"
+    location: "狭小昏暗的出租屋"
+    time: "深夜"
+    weather: "阴雨"
+    atmosphere: "压抑破败"
+    description: "不到10平米的房间，墙皮脱落，一张破旧的桌子上放着笔记本电脑，屏幕发出幽幽的蓝光，旁边堆满了泡面桶"
+    shot_type: "medium_shot"
+    camera_movement: "dolly"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "dark"
+    action: "蜷缩在椅子上，对着电脑屏幕傻笑"
+    extract_frame_index: -6
+    base_image_filename: "scene_001_base.png"
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "哈哈哈！ClaudeCode又更新了新功能！必须充值！"
+        emotion: "兴奋"
+        voice_style: "颤抖"
+    narrations:
+      - content: "这是小明在这个贫民窟的第327天，他的银行卡余额只剩下82.5元。"
+        voice_style: "讽刺"
+    sound_effects:
+      - description: "雨声淅沥沥"
+        timing: 1.0
+      - description: "键盘疯狂敲击声"
+        timing: 3.0
+    sub_scenes:
+      - sub_scene_id: "scene_001_sub_001"
+        description: "特写桌面上堆积如山的空泡面桶，每个桶上都标注着日期，像是某种诡异的纪念碑，最上面的碗里还有半根没吃完的面条"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 4.0
+        action: "镜头从泡面桶缓慢摇到电脑屏幕，屏幕上显示\"充值成功：¥2999\""
+        visual_style: null
+        color_tone: null
+        base_image_filename: "scene_001_sub_001_base.png"
+        dialogues: []
+        narrations: []
+        sound_effects: []
+      
+      - sub_scene_id: "scene_001_sub_002"
+        description: "手机屏幕特写，银行APP显示\"当前余额：¥82.50\"，短信通知栏全是\"您的账户支出2999元\"的消息记录"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 3.0
+        action: "手指颤抖地滑动短信列表，一条接一条的扣款记录"
+        visual_style: null
+        color_tone: null
+        base_image_filename: "scene_001_sub_002_base.png"
+        dialogues: []
+        narrations: []
+        sound_effects: []
+  
+  # TODO: Add remaining scenes - refer to script.txt for complete content
+

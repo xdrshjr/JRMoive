@@ -2,14 +2,14 @@
 
 # ==================== 项目元信息 ====================
 project:
-  name: "programmer_day"
+  name: "01_simple_project_day"
   description: "讲述一个年轻程序员日常工作的温馨故事"
   author: "AI编剧"
   version: "1.0"
 
 # ==================== 剧本配置 ====================
 script:
-  file: "script.txt"
+  file: "script.yaml"
   encoding: "utf-8"
 
 # ==================== 角色配置 ====================
@@ -45,7 +45,7 @@ image:
 
   # 角色一致性增强配置
   enable_character_consistency_judge: true  # 是否启用LLM评分
-  candidate_images_per_scene: 4  # 每个场景生成的候选图片数量
+  candidate_images_per_scene: 1  # 每个场景生成的候选图片数量
   save_all_candidates: true  # 是否保存所有候选图片
 
 # ==================== 视频生成 ====================
@@ -96,17 +96,8 @@ logging:
   save_to_file: true
   file: "outputs/generation.log"
 
-# ==================== API密钥配置 ====================
-# 可以在这里配置API密钥，也可以在.env文件中配置
-# 优先级: config.yaml > .env文件
-# 如果这里不设置，会从环境变量读取
-api_keys:
-  # 图像生成服务（配置你使用的服务）
-  doubao_api_key: null  # 请替换为你的豆包API密钥，或在.env中配置DOUBAO_API_KEY
-  # nano_banana_api_key: null                  # Nano Banana Pro API密钥
-
-  # 视频生成服务
-  veo3_api_key: null    # 请替换为你的Veo3 API密钥，或在.env中配置VEO3_API_KEY
-
-  # 可选服务
-  # openai_api_key: null                       # OpenAI API密钥（可选）
+# ==================== UI配置 ====================
+# 启用全局进度条显示（显示在屏幕底部，日志显示在上方）
+# 启用后，进度条会显示在底部，日志输出在上方
+# 禁用后，使用传统的纯日志输出方式
+enable_global_progress_bar: true

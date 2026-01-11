@@ -1,0 +1,59 @@
+title: "短剧标题"
+author: "作者名"
+description: "在这里描述你的故事（一句话概括）"
+
+characters:
+  - name: "角色名"
+    description: "角色描述，包括年龄、外貌特征、性格等"
+    age: 25
+    gender: "male"
+    appearance: "详细外貌描述"
+
+scenes:
+  - scene_id: "scene_001"
+    location: "具体地点描述"
+    time: "时间描述（如：清晨、中午、深夜）"
+    weather: "天气状况"
+    atmosphere: "氛围描述"
+    description: "场景的详细视觉描述"
+    shot_type: "medium_shot"
+    camera_movement: "static"
+    duration: 8.0
+    visual_style: "cinematic"
+    color_tone: "warm"
+    action: "角色动作描述"
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "角色名"
+    dialogues:
+      - character: "角色名"
+        content: "对话内容"
+        emotion: "情绪"
+        voice_style: "语气"
+    narrations:
+      - content: "旁白内容"
+        voice_style: "语气"
+    sound_effects:
+      - description: "音效描述"
+        timing: 2.0
+    sub_scenes: []
+
+# Available shot_type values:
+# - close_up: 特写
+# - medium_shot: 中景
+# - long_shot: 远景
+# - full_shot: 全景
+# - extreme_close_up: 大特写
+# - over_shoulder: 过肩镜头
+
+# Available camera_movement values:
+# - static: 静止
+# - pan: 摇镜
+# - tilt: 俯仰
+# - zoom: 推拉
+# - dolly: 移动
+# - tracking: 跟踪
+
+# Duration: 5-10 seconds per scene (system limit: max 10 seconds)
+

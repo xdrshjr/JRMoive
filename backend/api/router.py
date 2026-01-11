@@ -4,7 +4,7 @@ This module combines all API routers (REST v1 and OpenAI-compatible)
 """
 from fastapi import APIRouter
 
-from backend.api.v1 import llm, images, videos, tasks
+from backend.api.v1 import llm, images, videos, tasks, workflow
 from backend.api.openai import chat, images as openai_images, videos as openai_videos
 
 # Create main API router
@@ -16,6 +16,7 @@ v1_router.include_router(llm.router, prefix="/llm", tags=["LLM"])
 v1_router.include_router(images.router, prefix="/images", tags=["Images"])
 v1_router.include_router(videos.router, prefix="/videos", tags=["Videos"])
 v1_router.include_router(tasks.router, prefix="/tasks", tags=["Tasks"])
+v1_router.include_router(workflow.router, prefix="/workflow", tags=["Workflow"])
 
 # OpenAI-compatible routes
 openai_router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])

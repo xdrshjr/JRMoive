@@ -129,6 +129,8 @@ export default function Home() {
         
         {currentStep === 4 && (
           <Step4VideoProgress
+            polishedScript={polishedScript}
+            characters={characters}
             scenes={scenes}
             onComplete={handleStep4Complete}
             onCancel={handleStep4Cancel}

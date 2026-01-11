@@ -1,18 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, ProgressBar, LogViewer, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
-import { Scene, LogEntry, TaskStatusResponse, APIException } from '@/lib/types';
+import { Scene, Character, LogEntry, TaskStatusResponse, APIException } from '@/lib/types';
 
 interface Step4VideoProgressProps {
+  polishedScript: string;
+  characters: Character[];
   scenes: Scene[];
   onComplete: (videoUrl: string, metadata: any) => void;
   onCancel: () => void;
 }
 
 export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
+  polishedScript,
+  characters,
   scenes,
   onComplete,
   onCancel,
@@ -23,6 +27,9 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentStage, setCurrentStage] = useState('Initializing');
   const [error, setError] = useState<string | null>(null);
+  
+  // Use ref to prevent double execution in React StrictMode
+  const hasStartedRef = useRef(false);
 
   const addLog = (level: LogEntry['level'], component: string, message: string, data?: any) => {
     const logEntry: LogEntry = {
@@ -37,51 +44,69 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   };
 
   useEffect(() => {
-    // Start video generation when component mounts
-    startVideoGeneration();
-  }, []);
+    // Start video generation when component mounts (only once)
+    // Use ref to prevent double execution in React 18 StrictMode
+    if (!hasStartedRef.current) {
+      hasStartedRef.current = true;
+      startWorkflowGeneration();
+    }
+  }, []); // Empty dependency array - only run on mount
 
-  const startVideoGeneration = async () => {
-    addLog('info', 'VideoGeneration', 'Starting video generation workflow');
-    
-    /**
-     * TODO: Backend - Create /api/v1/workflow/generate endpoint
-     * This should orchestrate the full pipeline. For now, we generate videos
-     * for each scene individually.
-     */
+  const startWorkflowGeneration = async () => {
+    addLog('info', 'WorkflowGeneration', 'Starting full workflow generation pipeline');
     
     try {
-      // For demonstration, generate video for the first scene
-      // In production, this would call a workflow orchestration API
-      const firstScene = scenes[0];
-      
-      if (!firstScene || !firstScene.selectedImage) {
-        throw new Error('No scene image selected');
+      // Prepare character images mapping
+      const characterImages: Record<string, string> = {};
+      for (const char of characters) {
+        if (char.selectedImage) {
+          characterImages[char.name] = char.selectedImage;
+          addLog('debug', 'WorkflowGeneration', `Using character image for ${char.name}`);
+        }
       }
 
-      addLog('info', 'VideoGeneration', `Generating video for ${firstScene.id}`);
-      setCurrentStage('Generating Video');
+      // Prepare scene images mapping
+      const sceneImages: Record<string, string> = {};
+      for (const scene of scenes) {
+        if (scene.selectedImage) {
+          sceneImages[scene.id] = scene.selectedImage;
+          addLog('debug', 'WorkflowGeneration', `Using scene image for ${scene.id}`);
+        }
+      }
 
-      // Convert image URL to base64 if needed (simplified for demo)
-      const imageData = firstScene.selectedImage;
+      addLog('info', 'WorkflowGeneration', 
+        `Starting workflow with ${Object.keys(characterImages).length} character images and ${Object.keys(sceneImages).length} scene images`
+      );
+      setCurrentStage('Submitting Workflow');
 
-      const response = await apiClient.generateVideo({
-        image: imageData,
-        prompt: `${firstScene.location}, ${firstScene.time}, ${firstScene.description}, cinematic camera movement`,
-        duration: 5,
-        fps: 30,
+      // Call workflow API
+      const response = await apiClient.startWorkflow({
+        script: polishedScript,
+        characterImages: Object.keys(characterImages).length > 0 ? characterImages : undefined,
+        sceneImages: Object.keys(sceneImages).length > 0 ? sceneImages : undefined,
+        config: {
+          video_fps: 30,
+          video_duration: 5.0,
+          image_width: 1920,
+          image_height: 1080,
+          add_transitions: true,
+          add_subtitles: false,
+          enable_character_references: true,
+          video_motion_strength: 0.5,
+          max_concurrent_requests: 3,
+        },
       });
 
       setTaskId(response.task_id);
-      addLog('info', 'VideoGeneration', `Video generation started, task_id: ${response.task_id}`);
+      addLog('info', 'WorkflowGeneration', `Workflow task submitted successfully, task_id: ${response.task_id}`);
 
       // Start polling
       pollTaskStatus(response.task_id);
     } catch (err) {
-      addLog('error', 'VideoGeneration', 'Failed to start video generation', err);
+      addLog('error', 'WorkflowGeneration', 'Failed to start workflow generation', err);
       
       if (err instanceof APIException) {
-        setError(`Failed to start video generation: ${err.message}`);
+        setError(`Failed to start workflow: ${err.message}`);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -99,41 +124,60 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
           setProgress(statusUpdate.progress);
           setStatus(statusUpdate.status);
           
-          // Update stage based on progress
-          if (statusUpdate.progress < 20) {
-            setCurrentStage('Initializing');
-          } else if (statusUpdate.progress < 50) {
-            setCurrentStage('Processing Video');
-          } else if (statusUpdate.progress < 80) {
-            setCurrentStage('Rendering');
+          // Update stage based on progress and message
+          if (statusUpdate.progress < 10) {
+            setCurrentStage('Initializing Project');
+          } else if (statusUpdate.progress < 20) {
+            setCurrentStage('Parsing Script');
+          } else if (statusUpdate.progress < 40) {
+            setCurrentStage('Processing Character References');
+          } else if (statusUpdate.progress < 60) {
+            setCurrentStage('Generating Scene Images');
+          } else if (statusUpdate.progress < 85) {
+            setCurrentStage('Generating Scene Videos');
+          } else if (statusUpdate.progress < 98) {
+            setCurrentStage('Composing Final Video');
           } else {
             setCurrentStage('Finalizing');
           }
 
           addLog(
             'info',
-            'VideoGeneration',
-            `Progress update: ${statusUpdate.progress}% - ${statusUpdate.status}`
+            'WorkflowGeneration',
+            `Progress: ${statusUpdate.progress}% - ${currentStage}`
           );
-        }
+        },
+        600000 // 10 minutes max
       );
 
       // Get final result
       const finalStatus = await apiClient.getTaskStatus(taskId);
       
-      if (finalStatus.status === 'completed' && finalStatus.result?.result?.video_url) {
-        addLog('info', 'VideoGeneration', 'Video generation completed successfully');
-        onComplete(finalStatus.result.result.video_url, {
-          duration: finalStatus.result.duration,
+      if (finalStatus.status === 'completed' && finalStatus.result) {
+        const workflowResult = finalStatus.result;
+        
+        addLog('info', 'WorkflowGeneration', 'Workflow completed successfully', {
+          videoUrl: workflowResult.video_url,
+          duration: workflowResult.duration,
+          sceneCount: workflowResult.scene_count,
+          characterCount: workflowResult.character_count,
+        });
+        
+        // Pass result to parent
+        onComplete(workflowResult.video_url, {
+          duration: workflowResult.duration,
+          sceneCount: workflowResult.scene_count,
+          characterCount: workflowResult.character_count,
+          assets: workflowResult.assets,
         });
       } else {
-        throw new Error('Video generation completed but no video URL found');
+        throw new Error('Workflow completed but no result found');
       }
     } catch (err) {
-      addLog('error', 'VideoGeneration', 'Video generation failed', err);
+      addLog('error', 'WorkflowGeneration', 'Workflow generation failed', err);
       
       if (err instanceof APIException) {
-        setError(`Video generation failed: ${err.message}`);
+        setError(`Workflow failed: ${err.message}`);
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -145,15 +189,15 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
 
   const handleCancel = async () => {
     if (taskId) {
-      addLog('warn', 'VideoGeneration', 'User requested cancellation');
+      addLog('warn', 'WorkflowGeneration', 'User requested cancellation');
       
       try {
         await apiClient.cancelTask(taskId);
-        addLog('info', 'VideoGeneration', 'Task cancelled successfully');
+        addLog('info', 'WorkflowGeneration', 'Task cancelled successfully');
         setStatus('cancelled');
         onCancel();
       } catch (err) {
-        addLog('error', 'VideoGeneration', 'Failed to cancel task', err);
+        addLog('error', 'WorkflowGeneration', 'Failed to cancel task', err);
       }
     } else {
       onCancel();
@@ -163,8 +207,11 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   // Stage indicators
   const stages = [
     'Initializing',
-    'Processing Video',
-    'Rendering',
+    'Parsing Script',
+    'Character References',
+    'Scene Images',
+    'Scene Videos',
+    'Composing Video',
     'Finalizing',
   ];
 
@@ -181,27 +228,10 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
             color={error ? 'red' : status === 'completed' ? 'green' : 'blue'}
           />
 
-          {/* Stage Indicators */}
-          <div className="flex justify-between">
-            {stages.map((stage, index) => {
-              const isActive = stage === currentStage;
-              const isPast = stages.indexOf(currentStage) > index;
-              
-              return (
-                <div
-                  key={stage}
-                  className={`flex-1 text-center pb-2 border-b-4 transition-apple ${
-                    isActive
-                      ? 'border-apple-blue text-apple-blue font-semibold'
-                      : isPast
-                      ? 'border-apple-green text-apple-green'
-                      : 'border-text-tertiary text-text-secondary'
-                  }`}
-                >
-                  <p className="text-apple-footnote">{stage}</p>
-                </div>
-              );
-            })}
+          {/* Current Stage */}
+          <div className="text-center">
+            <p className="text-apple-body text-text-secondary mb-2">Current Stage:</p>
+            <p className="text-apple-headline text-text-primary font-semibold">{currentStage}</p>
           </div>
 
           {/* Status Message */}
@@ -254,4 +284,3 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
 };
 
 export default Step4VideoProgress;
-

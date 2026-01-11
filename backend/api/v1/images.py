@@ -103,8 +103,37 @@ async def generate_image(request: ImageGenerationRequest):
         image_b64 = None
         
         if isinstance(service_result, dict):
-            image_url = service_result.get("url")
-            image_b64 = service_result.get("b64_json")
+            # Try different possible keys for URL
+            image_url = (
+                service_result.get("image_url") or 
+                service_result.get("url") or
+                None
+            )
+            
+            # Try different possible keys for base64
+            image_b64 = (
+                service_result.get("b64_json") or 
+                service_result.get("image_base64") or
+                service_result.get("image_b64") or
+                None
+            )
+        
+        # Log what we're returning
+        has_url = bool(image_url and image_url.strip())
+        has_b64 = bool(image_b64 and image_b64.strip())
+        
+        if not has_url and not has_b64:
+            logger.error(
+                f"Image generation returned no usable data | "
+                f"service={result.get('service')} | "
+                f"result_keys={list(service_result.keys()) if isinstance(service_result, dict) else 'not_dict'} | "
+                f"result_sample={str(service_result)[:200]}"
+            )
+        else:
+            logger.info(
+                f"Image result extracted | has_url={has_url} | has_b64={has_b64} | "
+                f"url_length={len(image_url) if image_url else 0}"
+            )
         
         logger.info(f"Image generation successful | duration={result.get('duration', 0):.2f}s")
         
@@ -184,8 +213,23 @@ async def generate_image_to_image(request: ImageToImageRequest):
         
         # Extract result
         service_result = result.get("result", {})
-        image_url = service_result.get("url")
-        image_b64 = service_result.get("b64_json")
+        
+        # Try different possible keys for URL and base64
+        image_url = None
+        image_b64 = None
+        
+        if isinstance(service_result, dict):
+            image_url = (
+                service_result.get("image_url") or 
+                service_result.get("url") or
+                None
+            )
+            image_b64 = (
+                service_result.get("b64_json") or 
+                service_result.get("image_base64") or
+                service_result.get("image_b64") or
+                None
+            )
         
         logger.info(f"Image-to-image generation successful | duration={result.get('duration', 0):.2f}s")
         

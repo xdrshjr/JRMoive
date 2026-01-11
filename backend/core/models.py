@@ -181,3 +181,92 @@ class ServicesListResponse(BaseModel):
     video_services: List[ServiceInfo]
     llm_services: List[ServiceInfo]
 
+
+# ==================== Workflow Models ====================
+
+class WorkflowConfig(BaseModel):
+    """Configuration for workflow generation"""
+    video_fps: int = Field(30, ge=24, le=60, description="Video frames per second")
+    video_duration: float = Field(5.0, ge=1.0, le=10.0, description="Video duration in seconds")
+    image_width: int = Field(1920, ge=512, le=4096, description="Image width in pixels")
+    image_height: int = Field(1080, ge=512, le=4096, description="Image height in pixels")
+    add_transitions: bool = Field(True, description="Add transitions between scenes")
+    transition_duration: float = Field(0.5, ge=0.0, le=2.0, description="Transition duration in seconds")
+    add_subtitles: bool = Field(False, description="Add subtitles to video")
+    enable_character_references: bool = Field(True, description="Enable character reference generation")
+    bgm_volume: float = Field(0.0, ge=0.0, le=1.0, description="Background music volume")
+    
+    # Advanced options
+    image_cfg_scale: Optional[float] = Field(None, ge=1.0, le=20.0, description="Image generation CFG scale")
+    image_steps: Optional[int] = Field(None, ge=20, le=100, description="Image generation steps")
+    video_motion_strength: float = Field(0.5, ge=0.0, le=1.0, description="Video motion strength")
+    max_concurrent_requests: int = Field(3, ge=1, le=10, description="Max concurrent API requests")
+
+
+class WorkflowGenerationRequest(BaseModel):
+    """Request to generate a full video workflow"""
+    script: str = Field(..., min_length=10, description="Polished script text in markdown format")
+    character_images: Optional[Dict[str, str]] = Field(
+        None,
+        description="Character name -> base64/url mapping (optional, will generate if not provided)"
+    )
+    scene_images: Optional[Dict[str, str]] = Field(
+        None,
+        description="Scene ID -> base64/url mapping (optional, will generate if not provided)"
+    )
+    config: Optional[WorkflowConfig] = Field(None, description="Workflow configuration")
+    
+    @validator('script')
+    def validate_script_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Script cannot be empty")
+        return v
+
+
+class AssetInfo(BaseModel):
+    """Information about a workflow asset"""
+    filename: str = Field(..., description="Asset filename")
+    url: str = Field(..., description="URL to fetch the asset")
+    size_bytes: int = Field(..., ge=0, description="File size in bytes")
+    type: str = Field(..., description="Asset type: image, video, json, etc.")
+    path: Optional[str] = Field(None, description="Server-side path (for internal use)")
+
+
+class AssetsManifest(BaseModel):
+    """Manifest of all assets generated in workflow"""
+    character_references: List[AssetInfo] = Field(default_factory=list, description="Character reference images")
+    scene_images: List[AssetInfo] = Field(default_factory=list, description="Scene images")
+    scene_videos: List[AssetInfo] = Field(default_factory=list, description="Individual scene videos")
+    final_video: Optional[AssetInfo] = Field(None, description="Final composed video")
+    metadata_file: Optional[AssetInfo] = Field(None, description="Generation metadata file")
+
+
+class WorkflowResult(BaseModel):
+    """Result from workflow generation"""
+    video_url: str = Field(..., description="URL to the final composed video")
+    video_path: str = Field(..., description="Server-side path to the video file")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Generation metadata")
+    assets: AssetsManifest = Field(..., description="All generated assets")
+    duration: float = Field(..., description="Total generation duration in seconds")
+    scene_count: int = Field(..., ge=0, description="Number of scenes generated")
+    character_count: int = Field(..., ge=0, description="Number of characters detected")
+
+
+class WorkflowGenerationResponse(BaseModel):
+    """Response from workflow generation request"""
+    task_id: str = Field(..., description="Task ID for polling status")
+    status: TaskStatus = Field(..., description="Initial task status")
+    message: str = Field(..., description="Status message")
+
+
+class WorkflowStatusResponse(BaseModel):
+    """Workflow generation status response"""
+    task_id: str = Field(..., description="Task ID")
+    status: TaskStatus = Field(..., description="Current status")
+    progress: int = Field(ge=0, le=100, description="Progress percentage")
+    current_stage: Optional[str] = Field(None, description="Current processing stage")
+    result: Optional[WorkflowResult] = Field(None, description="Result when completed")
+    error: Optional[Dict[str, Any]] = Field(None, description="Error information if failed")
+    created_at: datetime = Field(..., description="Task creation time")
+    updated_at: datetime = Field(..., description="Last update time")
+    completed_at: Optional[datetime] = Field(None, description="Completion time")

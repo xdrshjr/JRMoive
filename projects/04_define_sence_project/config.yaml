@@ -9,7 +9,7 @@ project:
 
 # ==================== 剧本配置 ====================
 script:
-  file: "script.txt"
+  file: "script.yaml"
   encoding: "utf-8"
 
 # ==================== 角色配置 ====================
@@ -45,7 +45,7 @@ image:
 
   # 角色一致性增强配置
   enable_character_consistency_judge: true  # 是否启用LLM评分
-  candidate_images_per_scene: 4  # 每个场景生成的候选图片数量
+  candidate_images_per_scene: 3  # 每个场景生成的候选图片数量
   save_all_candidates: true  # 是否保存所有候选图片
 
 # ==================== 视频生成 ====================

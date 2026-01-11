@@ -4,6 +4,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'danger';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
+  as?: 'button' | 'span';
   children: React.ReactNode;
 }
 
@@ -12,11 +13,12 @@ export const Button: React.FC<ButtonProps> = ({
   size = 'md',
   loading = false,
   disabled,
+  as = 'button',
   children,
   className = '',
   ...props
 }) => {
-  const baseClasses = 'btn-apple transition-apple font-semibold';
+  const baseClasses = 'btn-apple transition-apple font-semibold inline-flex items-center justify-center';
   
   const variantClasses = {
     primary: 'btn-apple-primary',
@@ -40,20 +42,30 @@ export const Button: React.FC<ButtonProps> = ({
     .filter(Boolean)
     .join(' ');
 
+  const content = loading ? (
+    <div className="flex items-center gap-2">
+      <div className="spinner-apple" />
+      <span>Loading...</span>
+    </div>
+  ) : (
+    children
+  );
+
+  if (as === 'span') {
+    return (
+      <span className={combinedClasses} {...(props as any)}>
+        {content}
+      </span>
+    );
+  }
+
   return (
     <button
       className={combinedClasses}
       disabled={disabled || loading}
       {...props}
     >
-      {loading ? (
-        <div className="flex items-center gap-2">
-          <div className="spinner-apple" />
-          <span>Loading...</span>
-        </div>
-      ) : (
-        children
-      )}
+      {content}
     </button>
   );
 };

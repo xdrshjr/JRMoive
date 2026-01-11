@@ -4,6 +4,7 @@ Provides endpoints for async video generation from images.
 """
 from fastapi import APIRouter, HTTPException, status
 import tempfile
+import httpx
 from pathlib import Path
 
 from backend.core.models import (
@@ -60,12 +61,33 @@ async def generate_video(request: VideoGenerationRequest):
         
         # Handle base64 or URL
         if request.image.startswith("http://") or request.image.startswith("https://"):
-            # URL - service will handle it
-            image_path_str = request.image
+            # URL - download to temporary file
+            logger.info(f"Downloading image from URL: {request.image[:100]}...")
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(request.image)
+                    response.raise_for_status()
+                    
+                    # Save to temp file
+                    with open(image_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    logger.info(f"Image downloaded successfully | size={len(response.content)} bytes")
+            except httpx.HTTPError as e:
+                logger.error(f"Failed to download image from URL: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to download image from URL: {str(e)}"
+                )
+            
+            image_path_str = str(image_path)
         else:
             # Base64 - decode and save
+            logger.info("Decoding base64 image data")
             decode_base64_to_file(request.image, image_path)
             image_path_str = str(image_path)
+        
+        logger.debug(f"Image saved to: {image_path_str}")
         
         # Optimize prompt if requested
         prompt = request.prompt

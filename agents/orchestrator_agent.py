@@ -103,7 +103,8 @@ class DramaGenerationOrchestrator(BaseAgent):
         script_text: str,
         output_filename: str = "drama.mp4",
         progress_callback: Optional[Callable] = None,
-        character_images: Optional[Dict[str, Any]] = None
+        character_images: Optional[Dict[str, Any]] = None,
+        scene_images: Optional[Dict[str, str]] = None
     ) -> str:
         """
         执行完整的短剧生成流程
@@ -114,6 +115,8 @@ class DramaGenerationOrchestrator(BaseAgent):
             progress_callback: 进度回调函数
             character_images: 角色图片配置字典（可选）
                 格式: {character_name: {mode: "load"|"generate", images: [...], views: [...]}}
+            scene_images: 场景图片映射字典（可选）
+                格式: {scene_id: image_path} - 跳过这些场景的AI生成
 
         Returns:
             最终视频文件路径
@@ -187,29 +190,42 @@ class DramaGenerationOrchestrator(BaseAgent):
                 await self._update_progress(15, "Character references disabled, using prompt enhancement only")
 
             # 步骤3：生成分镜图片 (15% -> 45%)
-            await self._update_progress(15, "Generating storyboard images with character consistency...")
+            # 处理预生成的场景图片
+            provided_scene_count = 0
+            if scene_images:
+                provided_scene_count = len(scene_images)
+                self.logger.info(f"Using {provided_scene_count} pre-generated scene images")
+                await self._update_progress(15, f"Processing {provided_scene_count} provided scene images...")
+            else:
+                await self._update_progress(15, "Generating storyboard images with character consistency...")
 
             image_results = await self.image_generator.execute_concurrent(
                 script.scenes,
                 script=script,
                 reference_data=reference_data,
-                progress_callback=self._create_sub_progress_callback(15, 45)
+                progress_callback=self._create_sub_progress_callback(15, 45),
+                scene_images=scene_images
             )
             
             # 统计使用自定义基础图的场景数量
             custom_image_count = sum(1 for result in image_results if result.get('from_custom_base', False))
-            ai_generated_count = len(image_results) - custom_image_count
+            provided_count = sum(1 for result in image_results if result.get('from_provided', False))
+            ai_generated_count = len(image_results) - custom_image_count - provided_count
             
+            stats_parts = []
+            if ai_generated_count > 0:
+                stats_parts.append(f"{ai_generated_count} AI-generated")
             if custom_image_count > 0:
-                self.logger.info(
-                    f"Image generation complete: {ai_generated_count} AI-generated, "
-                    f"{custom_image_count} from custom base images"
-                )
+                stats_parts.append(f"{custom_image_count} custom")
+            if provided_count > 0:
+                stats_parts.append(f"{provided_count} provided")
+            
+            stats_message = ", ".join(stats_parts) if stats_parts else "no images"
+            self.logger.info(f"Image generation complete: {stats_message}")
 
             await self._update_progress(
                 45,
-                f"Generated {len(image_results)} consistent images "
-                f"({custom_image_count} custom)" if custom_image_count > 0 else f"Generated {len(image_results)} consistent images"
+                f"Processed {len(image_results)} scene images ({stats_message})"
             )
 
             # 步骤4：生成视频片段 (45% -> 75%)
@@ -223,11 +239,27 @@ class DramaGenerationOrchestrator(BaseAgent):
                 script.scenes,
                 character_dict=character_dict
             )
-
-            await self._update_progress(
-                75,
-                f"Generated {len(video_results)} video clips"
-            )
+            
+            # 检查是否有失败的场景
+            failed_scenes = [r for r in video_results if not r.get('success', False)]
+            success_scenes = [r for r in video_results if r.get('success', False)]
+            
+            if failed_scenes:
+                failed_ids = ', '.join([r.get('scene_id', 'unknown') for r in failed_scenes])
+                error_message = f"Video generation completed with errors: {len(success_scenes)} succeeded, {len(failed_scenes)} failed (scenes: {failed_ids})"
+                self.logger.warning(error_message)
+                await self._update_progress(
+                    75,
+                    error_message
+                )
+                # 如果所有场景都失败了，抛出异常
+                if len(success_scenes) == 0:
+                    raise Exception("All video scenes failed to generate")
+            else:
+                await self._update_progress(
+                    75,
+                    f"Generated {len(video_results)} video clips successfully"
+                )
 
             # 步骤5：合成最终视频 (75% -> 95%)
             await self._update_progress(75, "Composing final video...")

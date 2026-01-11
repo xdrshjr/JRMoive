@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Card, Button, Input, ImageGrid, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
+import { processImageResults } from '@/lib/imageHelpers';
 import { Scene, APIException } from '@/lib/types';
 
 interface Step3SceneImagesProps {
@@ -105,7 +106,13 @@ export const Step3SceneImages: React.FC<Step3SceneImagesProps> = ({
       );
 
       const results = await Promise.all(imagePromises);
-      const imageUrls = results.map((r) => r.image_url);
+      
+      // Process image URLs, handling both URL and base64 responses
+      const imageUrls = processImageResults(results);
+      
+      if (imageUrls.length === 0) {
+        throw new Error('No valid images were generated. Please try again.');
+      }
 
       setScenes((prev) =>
         prev.map((s) =>
@@ -115,12 +122,17 @@ export const Step3SceneImages: React.FC<Step3SceneImagesProps> = ({
         )
       );
 
-      logger.info('Step3SceneImages', `Generated ${imageUrls.length} images for scene ${sceneId}`);
+      logger.info('Step3SceneImages', `Generated ${imageUrls.length} images for scene ${sceneId}`, {
+        requested: scene.imageCount,
+        received: imageUrls.length,
+      });
     } catch (err) {
       logger.error('Step3SceneImages', `Failed to generate images for scene ${sceneId}`, err);
       
       if (err instanceof APIException) {
         setError(`Failed to generate images: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
       } else {
         setError('An unexpected error occurred. Please try again.');
       }

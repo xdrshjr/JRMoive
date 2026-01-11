@@ -1,0 +1,101 @@
+title: "程序员的一天"
+author: "AI编剧"
+description: "讲述一个年轻程序员日常工作的温馨故事"
+
+characters:
+  - name: "小明"
+    description: "25岁的Python开发者，戴黑框眼镜，清秀，台词为中文"
+    age: 25
+    gender: "male"
+    appearance: "黑框眼镜，清秀"
+  
+  - name: "小红"
+    description: "27岁的产品经理，长发，活泼，台词为中文"
+    age: 27
+    gender: "female"
+    appearance: "长发，活泼"
+
+scenes:
+  - scene_id: "scene_001"
+    location: "温馨的咖啡馆"
+    time: "清晨"
+    weather: "晴朗"
+    atmosphere: "温馨安静"
+    description: "阳光透过大窗户洒进咖啡馆，小明坐在窗边的位置，手里拿着咖啡杯"
+    shot_type: "medium_shot"
+    camera_movement: "static"
+    duration: 8.0
+    visual_style: "cinematic"
+    color_tone: "warm"
+    action: "坐在窗边，手持咖啡杯，望向窗外"
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "今天又是充满希望的一天！"
+        emotion: "微笑"
+        voice_style: "温柔"
+    narrations:
+      - content: "新的一天开始了，小明像往常一样来到他最喜欢的咖啡馆。"
+        voice_style: "平静"
+    sound_effects:
+      - description: "咖啡馆环境音"
+        timing: 2.0
+    sub_scenes:
+      - sub_scene_id: "scene_001_sub_001"
+        description: "特写咖啡杯冒出的热气，杯中拿铁艺术图案清晰可见"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 3.0
+        action: null
+        visual_style: null
+        color_tone: null
+        base_image_filename: null
+        dialogues: []
+        narrations: []
+        sound_effects: []
+      
+      - sub_scene_id: "scene_001_sub_002"
+        description: "透过咖啡馆窗户看到的繁忙街道，行人匆匆走过"
+        shot_type: "long_shot"
+        camera_movement: "pan"
+        duration: 3.0
+        action: "窗外行人来往，车辆缓缓驶过"
+        visual_style: null
+        color_tone: null
+        base_image_filename: null
+        dialogues: []
+        narrations: []
+        sound_effects: []
+  
+  - scene_id: "scene_002"
+    location: "现代化办公室"
+    time: "上午"
+    weather: "晴朗"
+    atmosphere: "忙碌"
+    description: "小明专注地盯着屏幕，手指在键盘上飞舞"
+    shot_type: "close_up"
+    camera_movement: "zoom"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "cool"
+    action: "快速打字，皱眉思考"
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "这个bug一定要在上线前修复..."
+        emotion: "专注"
+        voice_style: "低沉"
+    narrations: []
+    sound_effects:
+      - description: "键盘敲击声"
+        timing: 0.5
+      - description: "鼠标点击声"
+        timing: 3.0
+    sub_scenes: []
+

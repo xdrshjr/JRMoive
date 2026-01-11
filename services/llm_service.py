@@ -110,6 +110,7 @@ class LLMService:
             # 使用完整URL拼接chat/completions端点
             url = f"{self.api_url}/chat/completions"
 
+            self.logger.debug(f"Sending request to: {url}")
             response = await self.client.post(
                 url,
                 json=payload
@@ -119,7 +120,15 @@ class LLMService:
             response.raise_for_status()
 
             result = response.json()
-            self.logger.debug(f"LLM response received")
+            
+            # Log response structure for debugging
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"].get("content", "")
+                content_length = len(content) if content else 0
+                self.logger.info(f"LLM response received | content_length={content_length} chars")
+                self.logger.debug(f"Content preview: {content[:100]}..." if content else "Content is empty!")
+            else:
+                self.logger.warning(f"LLM response has no choices | response_keys={result.keys()}")
 
             return result
 

@@ -1,0 +1,158 @@
+title: "氪金程序员的悲惨日常"
+author: "AI编剧"
+description: "讲述一个为了AI编程工具倾家荡产的程序员的黑色幽默故事"
+
+characters:
+  - name: "小明"
+    description: "28岁的前端开发者，头发凌乱，眼神疲惫，台词为中文"
+    age: 28
+    gender: "male"
+    appearance: "头发凌乱，眼神疲惫"
+
+scenes:
+  - scene_id: "scene_001"
+    location: "狭小昏暗的出租屋"
+    time: "深夜"
+    weather: "阴雨"
+    atmosphere: "压抑破败"
+    description: "不到10平米的房间，墙皮脱落，一张破旧的桌子上放着笔记本电脑，屏幕发出幽幽的蓝光，旁边堆满了泡面桶"
+    shot_type: "medium_shot"
+    camera_movement: "dolly"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "dark"
+    action: "蜷缩在椅子上，对着电脑屏幕傻笑"
+    extract_frame_index: -6
+    base_image_filename: null
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "哈哈哈！ClaudeCode又更新了新功能！必须充值！"
+        emotion: "兴奋"
+        voice_style: "颤抖"
+    narrations:
+      - content: "这是小明在这个贫民窟的第327天，他的银行卡余额只剩下82.5元。"
+        voice_style: "讽刺"
+    sound_effects:
+      - description: "雨声淅沥沥"
+        timing: 1.0
+      - description: "键盘疯狂敲击声"
+        timing: 3.0
+    sub_scenes:
+      - sub_scene_id: "scene_001_sub_001"
+        description: "特写桌面上堆积如山的空泡面桶，每个桶上都标注着日期，像是某种诡异的纪念碑，最上面的碗里还有半根没吃完的面条"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 4.0
+        action: "镜头从泡面桶缓慢摇到电脑屏幕，屏幕上显示"充值成功：¥2999""
+        visual_style: null
+        color_tone: null
+        base_image_filename: null
+        dialogues: []
+        narrations: []
+        sound_effects: []
+      
+      - sub_scene_id: "scene_001_sub_002"
+        description: "手机屏幕特写，银行APP显示"当前余额：¥82.50"，短信通知栏全是"您的账户支出2999元"的消息记录"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 3.0
+        action: "手指颤抖地滑动短信列表，一条接一条的扣款记录"
+        visual_style: null
+        color_tone: null
+        base_image_filename: null
+        dialogues: []
+        narrations: []
+        sound_effects: []
+  
+  - scene_id: "scene_002"
+    location: "贫民窟公共厨房"
+    time: "中午"
+    weather: "阴天"
+    atmosphere: "压抑讽刺"
+    description: "油腻的公共厨房，水池里堆满脏碗，小明小心翼翼地用电热水壶烧水，准备泡他今天的第二顿泡面"
+    shot_type: "full_shot"
+    camera_movement: "tracking"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "cold"
+    action: "盯着水壶，搓着手，眼神空洞"
+    extract_frame_index: -6
+    base_image_filename: null
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "省吃俭用，吃泡面，住贫民窟，值了！值了！"
+        emotion: "自言自语"
+        voice_style: "苦笑"
+    narrations:
+      - content: "小明这个月的工资8000元，其中6000元充值给了ClaudeCode，1500元还了花呗，剩下的买了泡面。"
+        voice_style: "嘲讽"
+    sound_effects:
+      - description: "水壶烧水的咕噜声"
+        timing: 0.5
+      - description: "肚子咕咕叫的声音"
+        timing: 8.0
+    sub_scenes:
+      - sub_scene_id: "scene_002_sub_001"
+        description: "特写小明打开一桶最便宜的泡面，1.5元一桶的"老坛酸菜面"，倒入开水的瞬间，廉价调料包散发出刺鼻的味道"
+        shot_type: "close_up"
+        camera_movement: "static"
+        duration: 5.0
+        action: "手颤抖着撕开调料包，眼泪突然掉进泡面桶里"
+        visual_style: null
+        color_tone: null
+        base_image_filename: null
+        dialogues: []
+        narrations: []
+        sound_effects: []
+  
+  - scene_id: "scene_003"
+    location: "出租屋"
+    time: "凌晨3点"
+    weather: "雨停"
+    atmosphere: "魔怔癫狂"
+    description: "小明坐在电脑前，脸上被屏幕照得惨白，眼睛布满血丝，嘴角却挂着诡异的笑容，屏幕上ClaudeCode正在生成代码"
+    shot_type: "medium_shot"
+    camera_movement: "dolly"
+    duration: 10.0
+    visual_style: "cinematic"
+    color_tone: "blue"
+    action: "双手握拳，身体前倾，盯着屏幕傻笑"
+    extract_frame_index: -6
+    base_image_filename: null
+    characters:
+      - "小明"
+    dialogues:
+      - character: "小明"
+        content: "看！它写出来了！完美的代码！这就是我的氛围编程！"
+        emotion: "癫狂"
+        voice_style: "自言自语"
+      - character: "小明"
+        content: "什么房租，什么女朋友，什么营养，都不重要..."
+        emotion: "陶醉"
+        voice_style: "颤抖"
+      - character: "小明"
+        content: "只要有ClaudeCode，我就是世界上最幸福的程序员！哈哈哈哈！"
+        emotion: "疯狂"
+        voice_style: "大笑"
+      - character: "小明"
+        content: "还有...三天到期...必须...续费..."
+        emotion: "虚弱"
+        voice_style: "执着"
+    narrations:
+      - content: "第二天，小明因为营养不良晕倒在出租屋里。醒来后的第一件事，是查看ClaudeCode的订阅是否到期。"
+        voice_style: "冰冷"
+      - content: "他的购物车里，躺着一个加了300天的泡面链接，和一个永远不会下单的"充值3000元"按钮。"
+        voice_style: "讽刺"
+    sound_effects:
+      - description: "机械键盘的敲击声"
+        timing: 2.0
+      - description: "小明癫狂的笑声回荡"
+        timing: 10.0
+      - description: "远处传来救护车的鸣笛声"
+        timing: 15.0
+    sub_scenes: []
+

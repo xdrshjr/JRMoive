@@ -107,6 +107,20 @@ class VideoGenerationAgent(BaseAgent):
                 tasks_data,
                 show_progress=True
             )
+            
+            # 统计成功和失败的场景
+            success_count = sum(1 for r in results if r.get('success', False))
+            failed_count = len(results) - success_count
+            
+            if failed_count > 0:
+                failed_scenes = [r.get('scene_id', 'unknown') for r in results if not r.get('success', False)]
+                self.logger.warning(
+                    f"Video generation completed with failures: "
+                    f"{success_count} succeeded, {failed_count} failed. "
+                    f"Failed scenes: {', '.join(failed_scenes)}"
+                )
+            else:
+                self.logger.info(f"All {success_count} video clips generated successfully")
 
             await self.on_complete(results)
             return results
@@ -174,7 +188,7 @@ class VideoGenerationAgent(BaseAgent):
             character_dict: 角色字典
             
         Returns:
-            视频生成结果
+            视频生成结果（包含success标志）
         """
         image_path = image_result['image_path']
         scene_id = scene.scene_id
@@ -185,7 +199,7 @@ class VideoGenerationAgent(BaseAgent):
         # 带重试的视频生成
         for attempt in range(self.max_retries + 1):
             try:
-                return await self._generate_video_clip_once(
+                result = await self._generate_video_clip_once(
                     image_path,
                     scene,
                     scene_id,
@@ -193,6 +207,12 @@ class VideoGenerationAgent(BaseAgent):
                     attempt,
                     remove_dialogues=audio_filtered_error  # 如果之前遇到音频过滤错误，移除台词
                 )
+                # 标记成功
+                result['success'] = True
+                result['scene_id'] = scene_id
+                self.logger.info(f"✓ Scene {scene_id} generated successfully")
+                return result
+                
             except VideoGenerationError as e:
                 # 检查是否是音频过滤错误
                 if e.error_type == 'audio_filtered':
@@ -205,42 +225,62 @@ class VideoGenerationAgent(BaseAgent):
                 # 检查是否可重试
                 if not e.retryable:
                     self.logger.error(
-                        f"Non-retryable error for scene {scene_id}: {e}"
+                        f"✗ Scene {scene_id} failed: Non-retryable error: {e}"
                     )
-                    raise
+                    # 返回错误结果而不是抛出异常
+                    return {
+                        'success': False,
+                        'scene_id': scene_id,
+                        'error': str(e),
+                        'error_type': 'non_retryable',
+                        'video_path': None
+                    }
 
                 # 检查是否还有重试次数
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (self.retry_backoff ** attempt)
                     retry_strategy = " (will remove dialogues)" if audio_filtered_error else ""
                     self.logger.warning(
-                        f"Video generation failed for scene {scene_id} "
+                        f"Scene {scene_id} failed "
                         f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}{retry_strategy}. "
                         f"Retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)
                 else:
                     self.logger.error(
-                        f"Video generation failed for scene {scene_id} "
-                        f"after {self.max_retries + 1} attempts"
+                        f"✗ Scene {scene_id} failed after {self.max_retries + 1} attempts: {e}"
                     )
-                    raise
+                    # 返回错误结果而不是抛出异常
+                    return {
+                        'success': False,
+                        'scene_id': scene_id,
+                        'error': str(e),
+                        'error_type': 'max_retries_exceeded',
+                        'video_path': None
+                    }
+                    
             except Exception as e:
                 # 其他异常（网络错误等）也进行重试
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (self.retry_backoff ** attempt)
                     self.logger.warning(
-                        f"Unexpected error for scene {scene_id} "
+                        f"Scene {scene_id} failed with unexpected error "
                         f"(attempt {attempt + 1}/{self.max_retries + 1}): {e}. "
                         f"Retrying in {delay:.1f}s..."
                     )
                     await asyncio.sleep(delay)
                 else:
                     self.logger.error(
-                        f"Video generation failed for scene {scene_id} "
-                        f"after {self.max_retries + 1} attempts with error: {e}"
+                        f"✗ Scene {scene_id} failed after {self.max_retries + 1} attempts: {e}"
                     )
-                    raise
+                    # 返回错误结果而不是抛出异常
+                    return {
+                        'success': False,
+                        'scene_id': scene_id,
+                        'error': str(e),
+                        'error_type': 'unexpected_error',
+                        'video_path': None
+                    }
 
     async def _generate_scene_with_subscenes(
         self,

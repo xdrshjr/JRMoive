@@ -60,7 +60,7 @@ class LLMServiceWrapper:
             Chat completion response
         """
         start_time = time.time()
-        logger.debug(f"LLM chat completion request | messages={len(messages)}")
+        logger.debug(f"LLM chat completion request | messages={len(messages)} | temperature={temperature} | max_tokens={max_tokens}")
         
         try:
             response = await self.service.chat_completion(
@@ -70,7 +70,23 @@ class LLMServiceWrapper:
             )
             
             duration = time.time() - start_time
-            logger.info(f"LLM chat completion success | duration={duration:.2f}s")
+            
+            # Extract content for logging
+            content_preview = ""
+            if "choices" in response and len(response["choices"]) > 0:
+                content = response["choices"][0]["message"].get("content", "")
+                content_preview = content[:100] if content else "<empty>"
+            
+            usage = response.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+            
+            logger.info(
+                f"LLM chat completion success | duration={duration:.2f}s | "
+                f"prompt_tokens={prompt_tokens} | completion_tokens={completion_tokens} | "
+                f"content_preview={content_preview}..."
+            )
+            logger.debug(f"Full response structure: choices={len(response.get('choices', []))} | usage={usage}")
             
             return response
             
@@ -102,13 +118,21 @@ class LLMServiceWrapper:
         logger.debug(f"LLM prompt optimization | type={prompt_type} | length={len(prompt)}")
         
         try:
+            # Map prompt_type to optimization_context
+            optimization_context = "图片生成" if prompt_type == "image" else "视频生成"
+            
             optimized = await self.service.optimize_prompt(
-                prompt=prompt,
-                optimization_type=prompt_type
+                original_prompt=prompt,
+                optimization_context=optimization_context
             )
             
             duration = time.time() - start_time
-            logger.info(f"LLM prompt optimization success | duration={duration:.2f}s")
+            logger.info(
+                f"LLM prompt optimization success | duration={duration:.2f}s | "
+                f"original_length={len(prompt)} | optimized_length={len(optimized)}"
+            )
+            logger.debug(f"Original: {prompt[:100]}...")
+            logger.debug(f"Optimized: {optimized[:100]}...")
             
             return optimized
             

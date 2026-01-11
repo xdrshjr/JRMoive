@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Card, Button, Input, ImageGrid, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
+import { processImageResults } from '@/lib/imageHelpers';
 import { Character, APIException } from '@/lib/types';
 
 interface Step2CharacterImagesProps {
@@ -28,6 +29,10 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   function extractCharactersFromScript(script: string): Character[] {
+    logger.debug('Step2CharacterImages', 'Starting character extraction from script', {
+      scriptLength: script.length,
+    });
+
     // Simple extraction - look for character names in dialogue format
     // TODO: Backend - Create /api/v1/scripts/parse endpoint for better parsing
     const lines = script.split('\n');
@@ -41,40 +46,63 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
       }
     });
 
-    return Array.from(characterNames).map((name) => ({
+    const extractedCharacters = Array.from(characterNames).map((name) => ({
       name,
       description: `Character ${name} from the script`,
-      mode: 'generate',
+      mode: 'generate' as const,
       imageCount: 3,
       generatedImages: [],
       selectedImage: null,
     }));
+
+    logger.info('Step2CharacterImages', `Extracted ${extractedCharacters.length} characters from script`, {
+      characters: extractedCharacters.map(c => c.name),
+    });
+
+    return extractedCharacters;
   }
 
   const handleGenerateImages = async (characterName: string) => {
     const character = characters.find((c) => c.name === characterName);
-    if (!character) return;
+    if (!character) {
+      logger.warn('Step2CharacterImages', `Character not found: ${characterName}`);
+      return;
+    }
 
-    logger.info('Step2CharacterImages', `Generating images for character: ${characterName}`, {
+    logger.info('Step2CharacterImages', `Starting image generation for character: ${characterName}`, {
       count: character.imageCount,
+      description: character.description,
     });
 
     setGeneratingFor(characterName);
     setError(null);
 
     try {
-      const imagePromises = Array.from({ length: character.imageCount }).map(() =>
-        apiClient.generateImage({
+      logger.debug('Step2CharacterImages', `Creating ${character.imageCount} image generation requests for ${characterName}`);
+      
+      const imagePromises = Array.from({ length: character.imageCount }).map((_, index) => {
+        logger.debug('Step2CharacterImages', `Generating image ${index + 1}/${character.imageCount} for ${characterName}`);
+        return apiClient.generateImage({
           prompt: `Character reference sheet, ${character.description}, multiple angles, consistent style, professional character design`,
           service: 'doubao',
           width: 1024,
           height: 1024,
           optimize_prompt: true,
-        })
-      );
+        });
+      });
 
       const results = await Promise.all(imagePromises);
-      const imageUrls = results.map((r) => r.image_url);
+      logger.debug('Step2CharacterImages', `Received ${results.length} raw results for ${characterName}`);
+      
+      // Process image URLs, handling both URL and base64 responses
+      const imageUrls = processImageResults(results);
+      
+      if (imageUrls.length === 0) {
+        logger.error('Step2CharacterImages', `No valid images generated for ${characterName}`, {
+          rawResultsCount: results.length,
+        });
+        throw new Error('No valid images were generated. Please try again.');
+      }
 
       setCharacters((prev) =>
         prev.map((c) =>
@@ -84,35 +112,89 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
         )
       );
 
-      logger.info('Step2CharacterImages', `Generated ${imageUrls.length} images for ${characterName}`);
+      logger.info('Step2CharacterImages', `Successfully generated images for ${characterName}`, {
+        requested: character.imageCount,
+        received: imageUrls.length,
+        firstImagePreview: imageUrls[0]?.substring(0, 50) + '...',
+      });
     } catch (err) {
       logger.error('Step2CharacterImages', `Failed to generate images for ${characterName}`, err);
       
       if (err instanceof APIException) {
-        setError(`Failed to generate images: ${err.message}`);
+        setError(`Failed to generate images for ${characterName}: ${err.message}`);
+        logger.error('Step2CharacterImages', 'API Exception details', {
+          code: err.code,
+          details: err.details,
+          retryable: err.retryable,
+        });
+      } else if (err instanceof Error) {
+        setError(err.message);
       } else {
         setError('An unexpected error occurred. Please try again.');
+        logger.error('Step2CharacterImages', 'Unknown error type', { error: err });
       }
     } finally {
       setGeneratingFor(null);
+      logger.debug('Step2CharacterImages', `Image generation process completed for ${characterName}`);
     }
   };
 
   const handleImageSelect = (characterName: string, imageUrl: string) => {
+    logger.debug('Step2CharacterImages', `Selecting image for character ${characterName}`, {
+      imageUrlPreview: imageUrl.substring(0, 50) + '...',
+    });
+    
     setCharacters((prev) =>
       prev.map((c) =>
         c.name === characterName ? { ...c, selectedImage: imageUrl } : c
       )
     );
-    logger.debug('Step2CharacterImages', `Selected image for ${characterName}`);
+    
+    logger.info('Step2CharacterImages', `Image selected for ${characterName}`);
   };
 
   const handleFileUpload = async (characterName: string, file: File) => {
-    logger.info('Step2CharacterImages', `Uploading image for ${characterName}`);
+    logger.info('Step2CharacterImages', `Starting file upload for character: ${characterName}`, {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+    });
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      const errorMsg = `Invalid file type: ${file.type}. Please upload an image file.`;
+      logger.warn('Step2CharacterImages', errorMsg, { fileName: file.name });
+      setError(errorMsg);
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      const errorMsg = `File too large: ${(file.size / 1024 / 1024).toFixed(2)}MB. Maximum size is 10MB.`;
+      logger.warn('Step2CharacterImages', errorMsg, { fileName: file.name });
+      setError(errorMsg);
+      return;
+    }
+
+    setError(null);
+    logger.debug('Step2CharacterImages', 'Reading file as data URL');
 
     const reader = new FileReader();
+    
+    reader.onerror = () => {
+      const errorMsg = 'Failed to read file. Please try again.';
+      logger.error('Step2CharacterImages', errorMsg, { fileName: file.name });
+      setError(errorMsg);
+    };
+    
     reader.onload = () => {
       const dataUrl = reader.result as string;
+      logger.debug('Step2CharacterImages', 'File read successfully', {
+        dataUrlLength: dataUrl.length,
+        dataUrlPreview: dataUrl.substring(0, 50) + '...',
+      });
+      
       setCharacters((prev) =>
         prev.map((c) =>
           c.name === characterName
@@ -124,32 +206,62 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
             : c
         )
       );
+      
+      logger.info('Step2CharacterImages', `Successfully uploaded image for ${characterName}`, {
+        fileName: file.name,
+      });
     };
+    
     reader.readAsDataURL(file);
   };
 
   const handleNext = () => {
+    logger.debug('Step2CharacterImages', 'Validating character images before proceeding');
+    
     const missingCharacters = characters.filter((c) => !c.selectedImage);
     
     if (missingCharacters.length > 0) {
-      setError(
-        `Please select or generate images for: ${missingCharacters.map((c) => c.name).join(', ')}`
-      );
+      const errorMsg = `Please select or generate images for: ${missingCharacters.map((c) => c.name).join(', ')}`;
+      logger.warn('Step2CharacterImages', errorMsg, {
+        missingCount: missingCharacters.length,
+        missingCharacters: missingCharacters.map(c => c.name),
+      });
+      setError(errorMsg);
       return;
     }
 
-    logger.info('Step2CharacterImages', 'Proceeding to scene images step');
+    const charactersSummary = characters.map(c => ({
+      name: c.name,
+      hasImage: !!c.selectedImage,
+      totalImages: c.generatedImages.length,
+      mode: c.mode,
+    }));
+
+    logger.info('Step2CharacterImages', 'Proceeding to scene images step', {
+      totalCharacters: characters.length,
+      charactersSummary,
+    });
+    
     onNext(characters);
   };
 
   return (
     <div className="space-y-6">
       <Card>
-        <p className="text-apple-body text-text-secondary">
-          For each character, you can either generate reference images using AI or upload your
-          own. Select the best image for each character to ensure consistency throughout the
-          video.
-        </p>
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold text-text-primary">Character Reference Images</h3>
+          <p className="text-apple-body text-text-secondary">
+            For each character, you can either generate reference images using AI or upload your
+            own. Select the best image for each character to ensure consistency throughout the
+            video.
+          </p>
+          <div className="flex items-center gap-2 text-sm text-text-secondary">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <span>Found {characters.length} character{characters.length !== 1 ? 's' : ''} in your script</span>
+          </div>
+        </div>
       </Card>
 
       {/* Character Cards */}
@@ -157,99 +269,191 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
         {characters.map((character) => (
           <Card key={character.name} title={character.name}>
             <div className="space-y-4">
+              {/* Character Description */}
+              <div className="bg-bg-secondary p-3 rounded-apple-sm">
+                <p className="text-sm text-text-secondary">{character.description}</p>
+              </div>
+
               {/* Mode Selection */}
               <div className="flex gap-4">
                 <Button
                   variant={character.mode === 'generate' ? 'primary' : 'secondary'}
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
+                    logger.debug('Step2CharacterImages', `Switching to generate mode for ${character.name}`);
                     setCharacters((prev) =>
                       prev.map((c) =>
                         c.name === character.name ? { ...c, mode: 'generate' } : c
                       )
-                    )
-                  }
+                    );
+                  }}
                 >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
                   Auto Generate
                 </Button>
                 <Button
                   variant={character.mode === 'upload' ? 'primary' : 'secondary'}
                   size="sm"
-                  onClick={() =>
+                  onClick={() => {
+                    logger.debug('Step2CharacterImages', `Switching to upload mode for ${character.name}`);
                     setCharacters((prev) =>
                       prev.map((c) =>
                         c.name === character.name ? { ...c, mode: 'upload' } : c
                       )
-                    )
-                  }
+                    );
+                  }}
                 >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
                   Manual Upload
                 </Button>
               </div>
 
               {/* Generate Mode */}
               {character.mode === 'generate' && (
-                <div className="flex gap-4 items-end">
-                  <Input
-                    label="Number of Images"
-                    type="number"
-                    min="1"
-                    max="5"
-                    value={character.imageCount}
-                    onChange={(e) =>
-                      setCharacters((prev) =>
-                        prev.map((c) =>
-                          c.name === character.name
-                            ? { ...c, imageCount: parseInt(e.target.value, 10) }
-                            : c
-                        )
-                      )
-                    }
-                    className="w-32"
-                  />
-                  <Button
-                    onClick={() => handleGenerateImages(character.name)}
-                    loading={generatingFor === character.name}
-                    disabled={generatingFor !== null}
-                  >
-                    Generate Images
-                  </Button>
+                <div className="space-y-3">
+                  <div className="flex gap-4 items-end">
+                    <Input
+                      label="Number of Images"
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={character.imageCount}
+                      onChange={(e) => {
+                        const newCount = parseInt(e.target.value, 10);
+                        logger.debug('Step2CharacterImages', `Changing image count for ${character.name}`, {
+                          oldCount: character.imageCount,
+                          newCount,
+                        });
+                        setCharacters((prev) =>
+                          prev.map((c) =>
+                            c.name === character.name
+                              ? { ...c, imageCount: newCount }
+                              : c
+                          )
+                        );
+                      }}
+                      className="w-32"
+                      helperText="Generate 1-5 variations"
+                    />
+                    <Button
+                      onClick={() => handleGenerateImages(character.name)}
+                      loading={generatingFor === character.name}
+                      disabled={generatingFor !== null}
+                      size="md"
+                    >
+                      {generatingFor === character.name ? (
+                        <>Generating...</>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          Generate Images
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  {character.generatedImages.length === 0 && (
+                    <p className="text-sm text-text-secondary italic">
+                      Click "Generate Images" to create AI-generated character reference images
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Upload Mode */}
               {character.mode === 'upload' && (
-                <div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        handleFileUpload(character.name, file);
-                      }
-                    }}
-                  />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
+                    <label className="flex-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        id={`upload-${character.name}`}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleFileUpload(character.name, file);
+                          }
+                          // Reset input value to allow re-uploading the same file
+                          e.target.value = '';
+                        }}
+                      />
+                      <Button
+                        as="span"
+                        variant="secondary"
+                        size="md"
+                        className="cursor-pointer w-full sm:w-auto"
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Choose Image File
+                      </Button>
+                    </label>
+                  </div>
+                  <div className="text-sm text-text-secondary space-y-1">
+                    <p className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      Supported formats: JPG, PNG, WebP
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      Maximum file size: 10MB
+                    </p>
+                  </div>
+                  {character.generatedImages.length === 0 && (
+                    <p className="text-sm text-text-secondary italic">
+                      Click "Choose Image File" to upload a character reference image from your device
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Loading State */}
               {generatingFor === character.name && (
-                <LoadingAnimation message="Generating character images..." />
+                <LoadingAnimation message={`Generating ${character.imageCount} character reference image${character.imageCount > 1 ? 's' : ''}...`} />
               )}
 
               {/* Image Grid */}
               {character.generatedImages.length > 0 && (
-                <ImageGrid
-                  images={character.generatedImages.map((url) => ({
-                    id: url,
-                    url,
-                    selected: url === character.selectedImage,
-                  }))}
-                  onSelect={(imageUrl) => handleImageSelect(character.name, imageUrl)}
-                  columns={3}
-                  aspectRatio="1/1"
-                />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-text-primary">
+                      Generated Images ({character.generatedImages.length})
+                    </h4>
+                    {character.selectedImage && (
+                      <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Image selected
+                      </span>
+                    )}
+                  </div>
+                  <ImageGrid
+                    images={character.generatedImages.map((url) => ({
+                      id: url,
+                      url,
+                      selected: url === character.selectedImage,
+                    }))}
+                    onSelect={(imageUrl) => handleImageSelect(character.name, imageUrl)}
+                    columns={3}
+                    aspectRatio="1/1"
+                  />
+                  <p className="text-xs text-text-secondary italic">
+                    Click on an image to select it as the reference for this character
+                  </p>
+                </div>
               )}
             </div>
           </Card>
@@ -259,16 +463,43 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
       {/* Error Display */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-apple-red rounded-apple-md p-4">
-          <p className="text-apple-red text-sm">{error}</p>
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-apple-red flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <div className="flex-1">
+              <p className="text-apple-red text-sm font-medium">Error</p>
+              <p className="text-apple-red text-sm mt-1">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="text-apple-red hover:text-red-800 dark:hover:text-red-300"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 
       {/* Navigation */}
-      <div className="flex justify-between">
-        <Button onClick={onBack} variant="secondary" size="lg">
+      <div className="flex justify-between pt-4">
+        <Button 
+          onClick={() => {
+            logger.info('Step2CharacterImages', 'User clicked Back button');
+            onBack();
+          }} 
+          variant="secondary" 
+          size="lg"
+        >
           ← Back
         </Button>
-        <Button onClick={handleNext} size="lg">
+        <Button 
+          onClick={handleNext} 
+          size="lg"
+          disabled={characters.some(c => !c.selectedImage)}
+        >
           Next: Scene Images →
         </Button>
       </div>

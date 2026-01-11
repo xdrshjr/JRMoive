@@ -166,12 +166,13 @@ class ProjectRunner:
                 import logging
                 logging.getLogger(__name__).debug(f"Set {env_key} from project config")
 
-    async def run(self, progress_callback: Optional[Callable] = None) -> str:
+    async def run(self, progress_callback: Optional[Callable] = None, scene_images: Optional[Dict[str, str]] = None) -> str:
         """
         Execute drama generation workflow
 
         Args:
             progress_callback: Optional progress callback function
+            scene_images: Optional pre-generated scene images {scene_id: image_path}
 
         Returns:
             Path to generated video file
@@ -187,7 +188,7 @@ class ProjectRunner:
             self._setup_api_keys()
 
             # Load script
-            script_path = Path(self.project_config.script.file)
+            script_path = self.project_path / self.project_config.script.file
             if not script_path.exists():
                 raise ScriptFileNotFoundError(str(script_path))
 
@@ -214,6 +215,7 @@ class ProjectRunner:
                 output_filename=self.project_config.output.filename,
                 progress_callback=wrapped_callback,
                 character_images=character_images,
+                scene_images=scene_images
             )
 
             # Calculate total time

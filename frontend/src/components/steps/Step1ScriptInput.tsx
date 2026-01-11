@@ -5,6 +5,7 @@ import { Card, Button, Textarea } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { APIException } from '@/lib/types';
+import { getScriptPrompts } from '@/lib/scriptPrompts';
 
 interface Step1ScriptInputProps {
   onNext: (userScript: string, polishedScript: string) => void;
@@ -33,26 +34,63 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
     setError(null);
 
     try {
+      // Get language-appropriate prompts
+      const prompts = getScriptPrompts(userScript);
+      
+      logger.debug('Step1ScriptInput', 'Using prompts', {
+        language: prompts.language,
+        systemPromptLength: prompts.systemPrompt.length,
+        userMessageLength: prompts.userMessage.length,
+      });
+
       const response = await apiClient.chat({
         messages: [
           {
             role: 'system',
-            content:
-              'You are a professional screenwriter. Polish the following script into standard screenplay format with clear scenes, dialogues, and stage directions. Use markdown formatting with ## for scene headers.',
+            content: prompts.systemPrompt,
           },
           {
             role: 'user',
-            content: userScript,
+            content: prompts.userMessage,
           },
         ],
         temperature: 0.7,
+        max_tokens: 4000,
       });
 
       const polished = response.choices[0]?.message?.content || '';
+      
+      if (!polished) {
+        logger.error('Step1ScriptInput', 'Empty response from LLM');
+        setError('Received empty response from AI. Please try again.');
+        return;
+      }
+      
+      // Basic validation: check if response is valid YAML with required markers
+      const hasYamlStart = /^title:/m.test(polished) || /^---/m.test(polished);
+      const hasCharacters = /^characters:/m.test(polished);
+      const hasScenes = /^scenes:/m.test(polished);
+      
+      if (!hasYamlStart || !hasCharacters || !hasScenes) {
+        logger.warn('Step1ScriptInput', 'Generated script missing required YAML sections', {
+          hasYamlStart,
+          hasCharacters,
+          hasScenes,
+          preview: polished.substring(0, 200),
+        });
+        setError(
+          'Generated script may not be in the correct YAML format. Please review and edit if needed, or try again.'
+        );
+      }
+      
       setPolishedScript(polished);
       logger.info('Step1ScriptInput', 'Script polished successfully', {
         originalLength: userScript.length,
         polishedLength: polished.length,
+        language: prompts.language,
+        hasYamlStart,
+        hasCharacters,
+        hasScenes,
       });
     } catch (err) {
       logger.error('Step1ScriptInput', 'Failed to polish script', err);
@@ -87,7 +125,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
           value={userScript}
           onChange={(e) => setUserScript(e.target.value)}
           rows={8}
-          helperText="Provide a brief description or outline of your video script. The AI will help polish it into a proper screenplay format."
+          helperText="Provide a brief description or outline of your video script. The AI will convert it into a structured YAML format."
         />
         <div className="mt-4">
           <Button
@@ -102,13 +140,13 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
 
       {/* Polished Script Section */}
       {polishedScript && (
-        <Card title="Polished Script" subtitle="You can edit this script before proceeding">
+        <Card title="Polished Script (YAML Format)" subtitle="You can edit this YAML script before proceeding">
           <Textarea
-            label="Polished Screenplay"
+            label="Polished Script (YAML)"
             value={polishedScript}
             onChange={(e) => setPolishedScript(e.target.value)}
             rows={12}
-            helperText="Edit the polished script as needed. This will be used to generate character and scene images."
+            helperText="Edit the YAML script as needed. Ensure proper YAML syntax (indentation, quotes, etc.)."
           />
         </Card>
       )}

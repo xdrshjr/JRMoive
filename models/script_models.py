@@ -1,9 +1,13 @@
 """剧本数据模型定义"""
 
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from enum import Enum
 from datetime import timedelta
+import yaml
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ShotType(Enum):
@@ -34,6 +38,24 @@ class Character(BaseModel):
     gender: Optional[str] = Field(None, description="性别")
     appearance: Optional[str] = Field(None, description="外貌特征")
 
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v):
+        """验证角色名称"""
+        if not v or not v.strip():
+            raise ValueError("Character name cannot be empty")
+        if len(v) > 50:
+            raise ValueError("Character name must be less than 50 characters")
+        return v.strip()
+    
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v):
+        """验证角色描述"""
+        if not v or not v.strip():
+            raise ValueError("Character description cannot be empty")
+        return v.strip()
+
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -54,6 +76,22 @@ class Dialogue(BaseModel):
     emotion: Optional[str] = Field(None, description="情绪（高兴、悲伤、愤怒等）")
     voice_style: Optional[str] = Field(None, description="语音风格（用于TTS）")
 
+    @field_validator('character')
+    @classmethod
+    def validate_character(cls, v):
+        """验证角色名称"""
+        if not v or not v.strip():
+            raise ValueError("Dialogue character name cannot be empty")
+        return v.strip()
+    
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v):
+        """验证对话内容"""
+        if not v or not v.strip():
+            raise ValueError("Dialogue content cannot be empty")
+        return v.strip()
+
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -71,6 +109,14 @@ class Narration(BaseModel):
     content: str = Field(..., description="旁白内容")
     voice_style: Optional[str] = Field(None, description="旁白语音风格（用于未来TTS扩展）")
 
+    @field_validator('content')
+    @classmethod
+    def validate_content(cls, v):
+        """验证旁白内容"""
+        if not v or not v.strip():
+            raise ValueError("Narration content cannot be empty")
+        return v.strip()
+
     model_config = {
         "json_schema_extra": {
             "example": {
@@ -85,6 +131,14 @@ class SoundEffect(BaseModel):
     """音效模型"""
     description: str = Field(..., description="音效描述")
     timing: Optional[float] = Field(None, description="在场景中的时间点（秒）")
+
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v):
+        """验证音效描述"""
+        if not v or not v.strip():
+            raise ValueError("Sound effect description cannot be empty")
+        return v.strip()
 
     model_config = {
         "json_schema_extra": {
@@ -261,6 +315,38 @@ class Scene(BaseModel):
         if v is not None and (v < 1.0 or v > 10.0):
             raise ValueError("Scene duration must be between 1 and 10 seconds")
         return v
+    
+    @field_validator('scene_id')
+    @classmethod
+    def validate_scene_id(cls, v):
+        """验证场景ID"""
+        if not v or not v.strip():
+            raise ValueError("Scene ID cannot be empty")
+        return v.strip()
+    
+    @field_validator('location')
+    @classmethod
+    def validate_location(cls, v):
+        """验证地点"""
+        if not v or not v.strip():
+            raise ValueError("Scene location cannot be empty")
+        return v.strip()
+    
+    @field_validator('time')
+    @classmethod
+    def validate_time(cls, v):
+        """验证时间"""
+        if not v or not v.strip():
+            raise ValueError("Scene time cannot be empty")
+        return v.strip()
+    
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v):
+        """验证描述"""
+        if not v or not v.strip():
+            raise ValueError("Scene description cannot be empty")
+        return v.strip()
 
     def to_image_prompt(self, character_dict: Optional[Dict[str, 'Character']] = None) -> str:
         """
@@ -430,6 +516,22 @@ class Script(BaseModel):
     scenes: List[Scene] = Field(..., description="场景列表")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="元数据")
 
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v):
+        """验证标题"""
+        if not v or not v.strip():
+            raise ValueError("Script title cannot be empty")
+        return v.strip()
+    
+    @field_validator('scenes')
+    @classmethod
+    def validate_scenes(cls, v):
+        """验证场景列表"""
+        if not v:
+            raise ValueError("Script must have at least one scene")
+        return v
+
     @property
     def total_duration(self) -> Optional[float]:
         """计算总时长（秒）- 如果所有场景都有duration则返回总和，否则返回None"""
@@ -473,6 +575,134 @@ class Script(BaseModel):
             errors.append(f"Undeclared characters: {undeclared}")
 
         return errors
+    
+    def to_yaml(self) -> str:
+        """
+        将剧本导出为YAML格式
+        
+        Returns:
+            YAML格式的剧本字符串
+        """
+        logger.debug("Converting Script to YAML format")
+        
+        # Convert to dictionary
+        script_dict = {
+            'title': self.title,
+            'author': self.author,
+            'description': self.description,
+            'characters': [
+                {
+                    'name': char.name,
+                    'description': char.description,
+                    'age': char.age,
+                    'gender': char.gender,
+                    'appearance': char.appearance,
+                }
+                for char in self.characters
+            ],
+            'scenes': []
+        }
+        
+        # Convert scenes
+        for scene in self.scenes:
+            scene_dict = {
+                'scene_id': scene.scene_id,
+                'location': scene.location,
+                'time': scene.time,
+                'weather': scene.weather,
+                'atmosphere': scene.atmosphere,
+                'description': scene.description,
+                'shot_type': scene.shot_type.value,
+                'camera_movement': scene.camera_movement.value,
+                'duration': scene.duration,
+                'visual_style': scene.visual_style,
+                'color_tone': scene.color_tone,
+                'action': scene.action,
+                'extract_frame_index': scene.extract_frame_index,
+                'base_image_filename': scene.base_image_filename,
+                'characters': scene.characters,
+                'dialogues': [
+                    {
+                        'character': d.character,
+                        'content': d.content,
+                        'emotion': d.emotion,
+                        'voice_style': d.voice_style,
+                    }
+                    for d in scene.dialogues
+                ],
+                'narrations': [
+                    {
+                        'content': n.content,
+                        'voice_style': n.voice_style,
+                    }
+                    for n in scene.narrations
+                ],
+                'sound_effects': [
+                    {
+                        'description': se.description,
+                        'timing': se.timing,
+                    }
+                    for se in scene.sound_effects
+                ],
+                'sub_scenes': []
+            }
+            
+            # Convert sub-scenes
+            for sub_scene in scene.sub_scenes:
+                sub_scene_dict = {
+                    'sub_scene_id': sub_scene.sub_scene_id,
+                    'description': sub_scene.description,
+                    'action': sub_scene.action,
+                    'shot_type': sub_scene.shot_type.value if sub_scene.shot_type else None,
+                    'camera_movement': sub_scene.camera_movement.value if sub_scene.camera_movement else None,
+                    'duration': sub_scene.duration,
+                    'visual_style': sub_scene.visual_style,
+                    'color_tone': sub_scene.color_tone,
+                    'base_image_filename': sub_scene.base_image_filename,
+                    'dialogues': [
+                        {
+                            'character': d.character,
+                            'content': d.content,
+                            'emotion': d.emotion,
+                            'voice_style': d.voice_style,
+                        }
+                        for d in sub_scene.dialogues
+                    ],
+                    'narrations': [
+                        {
+                            'content': n.content,
+                            'voice_style': n.voice_style,
+                        }
+                        for n in sub_scene.narrations
+                    ],
+                    'sound_effects': [
+                        {
+                            'description': se.description,
+                            'timing': se.timing,
+                        }
+                        for se in sub_scene.sound_effects
+                    ],
+                }
+                scene_dict['sub_scenes'].append(sub_scene_dict)
+            
+            script_dict['scenes'].append(scene_dict)
+        
+        # Add metadata if present
+        if self.metadata:
+            script_dict['metadata'] = self.metadata
+        
+        # Convert to YAML with proper formatting
+        yaml_str = yaml.dump(
+            script_dict,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+            indent=2,
+            width=120
+        )
+        
+        logger.info(f"Script exported to YAML: {len(self.scenes)} scenes, {len(self.characters)} characters")
+        return yaml_str
 
     model_config = {
         "json_schema_extra": {

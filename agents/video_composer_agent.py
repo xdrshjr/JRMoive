@@ -58,8 +58,22 @@ class VideoComposerAgent(BaseAgent):
         self.logger.info(f"Starting video composition with {len(video_results)} clips")
 
         try:
+            # 过滤掉失败的场景
+            successful_videos = [v for v in video_results if v.get('success', False) and v.get('video_path')]
+            failed_videos = [v for v in video_results if not v.get('success', False)]
+            
+            if failed_videos:
+                failed_ids = ', '.join([v.get('scene_id', 'unknown') for v in failed_videos])
+                self.logger.warning(
+                    f"Composing video with {len(successful_videos)} successful scenes. "
+                    f"Skipping {len(failed_videos)} failed scenes: {failed_ids}"
+                )
+            
+            if not successful_videos:
+                raise ValueError("No successful video clips to compose")
+            
             # 按scene_id排序
-            video_results = sorted(video_results, key=lambda x: x['scene_id'])
+            video_results = sorted(successful_videos, key=lambda x: x['scene_id'])
 
             # 加载视频片段
             clips = self._load_video_clips(video_results)

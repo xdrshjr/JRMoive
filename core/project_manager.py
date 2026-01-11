@@ -153,10 +153,11 @@ class ProjectManager:
 
         # Copy script file if provided
         if script_file and script_file.exists():
-            shutil.copy(script_file, project_path / "script.txt")
+            target_script = project_path / "script.yaml"
+            shutil.copy(script_file, target_script)
         else:
-            # Create empty script file with template
-            self._create_empty_script(project_path / "script.txt")
+            # Create empty script file with YAML template
+            self._create_empty_script(project_path / "script.yaml")
 
         # Create folder structure
         (project_path / "characters").mkdir(exist_ok=True)
@@ -234,11 +235,18 @@ class ProjectManager:
         else:
             info["has_config"] = False
 
-        # Check for script
-        script_file = project_path / "script.txt"
-        if script_file.exists():
+        # Check for script (try both .yaml and .txt for backward compatibility during migration)
+        script_file_yaml = project_path / "script.yaml"
+        script_file_txt = project_path / "script.txt"
+        
+        if script_file_yaml.exists():
             info["has_script"] = True
-            info["script_size"] = script_file.stat().st_size
+            info["script_size"] = script_file_yaml.stat().st_size
+            info["script_format"] = "yaml"
+        elif script_file_txt.exists():
+            info["has_script"] = True
+            info["script_size"] = script_file_txt.stat().st_size
+            info["script_format"] = "txt"
         else:
             info["has_script"] = False
 
@@ -334,33 +342,47 @@ class ProjectManager:
 
     def _create_empty_script(self, script_path: Path) -> None:
         """
-        Create an empty script file with template
+        Create an empty YAML script file with template
 
         Args:
             script_path: Path to script file
         """
-        template = """# 短剧标题
+        template = """title: "短剧标题"
+author: "作者名"
+description: "在这里描述你的故事"
 
-作者: 作者名
-简介: 在这里描述你的故事
+characters:
+  - name: "角色名"
+    description: "角色描述，包括年龄、外貌特征、性格等"
+    age: 25
+    gender: "male"
+    appearance: "外貌特征描述"
 
-## 角色
-- 角色名: 描述, 年龄, 外貌特征
-
-## 场景1: 地点 - 时间
-地点: 具体地点描述
-时间: 时间描述
-天气: 天气状况
-氛围: 氛围描述
-镜头: 特写/中景/远景
-运镜: 静止/摇镜/推镜/拉镜/跟镜
-风格: cinematic/anime/realistic
-色调: warm/cool/vibrant
-
-描述: 场景的具体描述
-
-角色名（情绪|语气）: "对话内容"
-
+scenes:
+  - scene_id: "scene_001"
+    location: "具体地点描述"
+    time: "时间描述（如：清晨、中午、深夜）"
+    weather: "天气状况"
+    atmosphere: "氛围描述"
+    description: "场景的详细视觉描述"
+    shot_type: "medium_shot"
+    camera_movement: "static"
+    duration: 8.0
+    visual_style: "cinematic"
+    color_tone: "warm"
+    action: "角色动作描述"
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "角色名"
+    dialogues:
+      - character: "角色名"
+        content: "对话内容"
+        emotion: "情绪"
+        voice_style: "语气"
+    narrations: []
+    sound_effects: []
+    sub_scenes: []
 """
         script_path.write_text(template, encoding='utf-8')
 

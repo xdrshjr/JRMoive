@@ -18,11 +18,13 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
     
+    # Note: reload=False to avoid Windows multiprocessing issues
+    # Manually restart the server when you make code changes
     uvicorn.run(
         "backend.main:app",
         host=settings.host,
         port=settings.port,
-        reload=True,
+        reload=False,  # Disabled to prevent Windows reload issues
         log_level=settings.log_level.lower(),
         access_log=True
     )

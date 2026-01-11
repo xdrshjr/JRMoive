@@ -121,7 +121,8 @@ class ImageGenerationAgent(BaseAgent):
         scenes: List[Scene],
         script: Optional[Script] = None,
         reference_data: Optional[Dict[str, Dict[str, Any]]] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        scene_images: Optional[Dict[str, str]] = None
     ) -> List[Dict[str, Any]]:
         """
         执行批量图片生成（并发执行）
@@ -131,6 +132,7 @@ class ImageGenerationAgent(BaseAgent):
             script: 完整脚本对象（可选，用于一致性增强）
             reference_data: 角色参考数据（可选，用于一致性增强）
             progress_callback: 进度回调函数
+            scene_images: 预生成的场景图片映射 {scene_id: image_path}
 
         Returns:
             图片生成结果列表
@@ -152,6 +154,17 @@ class ImageGenerationAgent(BaseAgent):
         else:
             self.character_enhancer = None
             self.character_dict = None
+        
+        # Store scene_images for reference during generation
+        self.scene_images = scene_images or {}
+        
+        if self.scene_images:
+            self.logger.info(
+                f"Provided scene images stored | count={len(self.scene_images)} | "
+                f"scene_ids={list(self.scene_images.keys())}"
+            )
+        else:
+            self.logger.info("No scene images provided, will generate all scenes")
 
         self.logger.info(f"Starting concurrent image generation for {len(scenes)} scenes")
 
@@ -192,6 +205,21 @@ class ImageGenerationAgent(BaseAgent):
         Returns:
             图片生成结果
         """
+        # Check if a provided scene image exists FIRST (before any other checks)
+        has_scene_images_attr = hasattr(self, 'scene_images')
+        scene_in_mapping = has_scene_images_attr and scene.scene_id in self.scene_images
+        
+        self.logger.info(
+            f"Scene image check | scene_id={scene.scene_id} | "
+            f"has_scene_images={has_scene_images_attr} | "
+            f"scene_in_mapping={scene_in_mapping} | "
+            f"scene_images_count={len(self.scene_images) if has_scene_images_attr else 0}"
+        )
+        
+        if scene_in_mapping:
+            self.logger.info(f"Using provided scene image for: {scene.scene_id}")
+            return await self._use_provided_scene_image(scene)
+        
         self.logger.info(f"Generating image for scene: {scene.scene_id}")
 
         # 检查是否需要生成多个候选并评分
@@ -219,6 +247,10 @@ class ImageGenerationAgent(BaseAgent):
         Returns:
             图片生成结果
         """
+        # Check if a provided scene image exists
+        if hasattr(self, 'scene_images') and scene.scene_id in self.scene_images:
+            return await self._use_provided_scene_image(scene)
+        
         self.logger.info(f"Generating image for scene: {scene.scene_id}")
         
         # 检查是否有自定义场景基础图
@@ -402,6 +434,55 @@ class ImageGenerationAgent(BaseAgent):
             result = await self._generate_single_image(scene, candidate_index)
             scene.base_image_filename = original_filename
             return result
+
+    async def _use_provided_scene_image(self, scene: Scene) -> Dict[str, Any]:
+        """
+        使用工作流提供的场景图片（从workflow API传入）
+        
+        Args:
+            scene: 场景对象
+            
+        Returns:
+            图片使用结果
+        """
+        provided_image_path = self.scene_images.get(scene.scene_id)
+        
+        if not provided_image_path:
+            self.logger.warning(f"No provided image found for scene {scene.scene_id}, generating AI image")
+            return await self._generate_single_image(scene)
+        
+        provided_path = Path(provided_image_path)
+        
+        if not provided_path.exists():
+            self.logger.error(
+                f"Provided image not found: {provided_path}. "
+                f"Scene {scene.scene_id} will fall back to AI generation."
+            )
+            return await self._generate_single_image(scene)
+        
+        self.logger.info(f"Using provided image for scene {scene.scene_id}: {provided_path}")
+        
+        # 复制图片到输出目录
+        import shutil
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{scene.scene_id}_{timestamp}_provided.png"
+        save_path = self.output_dir / filename
+        
+        try:
+            shutil.copy2(provided_path, save_path)
+            self.logger.info(f"Provided image copied to: {save_path}")
+            
+            return {
+                'scene_id': scene.scene_id,
+                'image_path': str(save_path),
+                'from_provided': True,
+                'provided_image_source': str(provided_path),
+                'prompt': f"Provided image from workflow",
+                'original_prompt': scene.to_image_prompt(self.character_dict),
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to copy provided image: {e}. Falling back to AI generation.")
+            return await self._generate_single_image(scene)
 
     async def _generate_with_judging(self, scene: Scene) -> Dict[str, Any]:
         """

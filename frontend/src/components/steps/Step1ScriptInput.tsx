@@ -21,14 +21,9 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   initialUserScript = '',
   initialPolishedScript = '',
 }) => {
-  // Mode state - check localStorage for saved preference
-  const [mode, setMode] = useState<ScriptMode>(() => {
-    if (typeof window !== 'undefined') {
-      const savedMode = localStorage.getItem('scriptInputMode');
-      return (savedMode === 'direct' || savedMode === 'polish') ? savedMode : 'polish';
-    }
-    return 'polish';
-  });
+  // Mode state - default to 'polish', will load from localStorage after mount
+  const [mode, setMode] = useState<ScriptMode>('polish');
+  const [isMounted, setIsMounted] = useState(false);
 
   // Polish mode state
   const [userScript, setUserScript] = useState(initialUserScript);
@@ -43,13 +38,23 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
   const [showSample, setShowSample] = useState(false);
 
-  // Save mode preference to localStorage
+  // Load mode preference from localStorage after mount (to avoid hydration mismatch)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    setIsMounted(true);
+    const savedMode = localStorage.getItem('scriptInputMode');
+    if (savedMode === 'direct' || savedMode === 'polish') {
+      setMode(savedMode);
+      logger.debug('Step1ScriptInput', 'Loaded saved mode preference', { mode: savedMode });
+    }
+  }, []);
+
+  // Save mode preference to localStorage when it changes
+  useEffect(() => {
+    if (isMounted) {
       localStorage.setItem('scriptInputMode', mode);
       logger.debug('Step1ScriptInput', 'Script input mode changed', { mode });
     }
-  }, [mode]);
+  }, [mode, isMounted]);
 
   // Handle mode change with unsaved content warning
   const handleModeChange = (newMode: string) => {
@@ -316,9 +321,11 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
                   <h4 className="text-apple-headline mb-2 text-text-primary">
                     Sample YAML Format:
                   </h4>
-                  <pre className="text-apple-caption text-text-secondary overflow-x-auto">
-                    <code>{getSampleYAMLScript()}</code>
-                  </pre>
+                  <div className="max-h-96 overflow-y-auto">
+                    <pre className="text-apple-caption text-text-secondary overflow-x-auto">
+                      <code>{getSampleYAMLScript()}</code>
+                    </pre>
+                  </div>
                 </div>
               )}
             </div>
@@ -352,13 +359,15 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       {validationWarnings.length > 0 && (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-400 rounded-apple-md p-4">
           <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-            ⚠️ Warnings:
+            ⚠️ Warnings ({validationWarnings.length}):
           </h4>
-          <ul className="text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside space-y-1">
-            {validationWarnings.map((warning, idx) => (
-              <li key={idx}>{warning}</li>
-            ))}
-          </ul>
+          <div className="max-h-40 overflow-y-auto">
+            <ul className="text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside space-y-1 pr-2">
+              {validationWarnings.map((warning, idx) => (
+                <li key={idx}>{warning}</li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
 

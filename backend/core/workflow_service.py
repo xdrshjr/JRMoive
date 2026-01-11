@@ -17,6 +17,7 @@ from backend.core.models import WorkflowConfig, WorkflowResult, AssetsManifest
 from backend.core.temp_project_manager import get_temp_project_manager
 from backend.utils.asset_manager import get_asset_manager
 from backend.utils.logger import get_logger
+from backend.utils.log_helpers import format_image_dict_for_log, sanitize_log_dict
 from backend.config import settings
 
 # CLI imports
@@ -70,13 +71,20 @@ class WorkflowService:
         # Determine mode
         mode = "with_images" if (character_images or scene_images) else "full_pipeline"
         logger.info(f"WorkflowService | Starting workflow | task_id={task_id} | mode={mode}")
+        
+        # Format images for logging (truncate base64)
+        char_images_log = format_image_dict_for_log(character_images)
+        scene_images_log = format_image_dict_for_log(scene_images)
+        
         logger.debug(
             f"WorkflowService | Workflow input details | "
             f"task_id={task_id} | "
             f"script_length={len(script)} | "
             f"character_images_count={len(character_images) if character_images else 0} | "
+            f"character_images_keys={list(character_images.keys()) if character_images else []} | "
             f"scene_images_count={len(scene_images) if scene_images else 0} | "
-            f"config={config.dict() if config else 'default'}"
+            f"scene_images_keys={list(scene_images.keys()) if scene_images else []} | "
+            f"config={sanitize_log_dict(config.dict()) if config else 'default'}"
         )
         
         try:

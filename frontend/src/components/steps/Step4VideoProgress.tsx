@@ -155,7 +155,7 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
             `Progress: ${statusUpdate.progress}% - ${currentStage}`
           );
         },
-        600000 // 10 minutes max
+        14400000 // 4 hours max (for very long video generation)
       );
 
       // Get final result

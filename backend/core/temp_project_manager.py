@@ -13,6 +13,7 @@ from datetime import datetime
 
 from backend.core.models import WorkflowConfig
 from backend.utils.logger import get_logger
+from backend.utils.log_helpers import truncate_base64
 
 logger = get_logger(__name__)
 
@@ -126,8 +127,18 @@ class TempProjectManager:
         # Save character images if provided
         if character_images:
             logger.info(f"TempProjectManager | Saving custom character images | count={len(character_images)}")
+            logger.debug(f"TempProjectManager | Character names | names={list(character_images.keys())}")
             for char_name, image_data in character_images.items():
                 saved_path = project_dir / "characters" / f"{self._sanitize_filename(char_name)}.png"
+                
+                # Log with truncated base64
+                image_preview = truncate_base64(image_data, max_length=40)
+                logger.debug(
+                    f"TempProjectManager | Saving character image | "
+                    f"character={char_name} | "
+                    f"data={image_preview}"
+                )
+                
                 await self._save_image(
                     image_data,
                     saved_path,
@@ -143,7 +154,16 @@ class TempProjectManager:
         # Save scene images if provided
         if scene_images:
             logger.info(f"TempProjectManager | Saving scene images | count={len(scene_images)}")
+            logger.debug(f"TempProjectManager | Scene IDs | ids={list(scene_images.keys())}")
             for scene_id, image_data in scene_images.items():
+                # Log with truncated base64
+                image_preview = truncate_base64(image_data, max_length=40)
+                logger.debug(
+                    f"TempProjectManager | Saving scene image | "
+                    f"scene_id={scene_id} | "
+                    f"data={image_preview}"
+                )
+                
                 await self._save_image(
                     image_data,
                     project_dir / "scenes" / f"{self._sanitize_filename(scene_id)}.png",
@@ -273,7 +293,8 @@ class TempProjectManager:
                 logger.info(f"TempProjectManager | Image downloaded successfully | id={image_identifier} | size={len(image_bytes)} bytes")
             else:
                 # Decode from base64
-                logger.debug(f"TempProjectManager | Decoding base64 image | id={image_identifier}")
+                data_preview = truncate_base64(image_data, max_length=40)
+                logger.debug(f"TempProjectManager | Decoding base64 image | id={image_identifier} | data={data_preview}")
                 
                 # Remove data URL prefix if present
                 if ',' in image_data and image_data.startswith('data:'):
@@ -281,7 +302,7 @@ class TempProjectManager:
                 
                 image_bytes = base64.b64decode(image_data)
                 output_path.write_bytes(image_bytes)
-                logger.debug(f"TempProjectManager | Image decoded | id={image_identifier} | size={len(image_bytes)} bytes")
+                logger.info(f"TempProjectManager | Image decoded successfully | id={image_identifier} | size={len(image_bytes)} bytes")
         
         except base64.binascii.Error as e:
             logger.error(f"TempProjectManager | Invalid base64 image data | id={image_identifier} | error={e}")

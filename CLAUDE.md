@@ -50,6 +50,33 @@ python init_project.py
 python examples/complete_workflow_example.py
 ```
 
+### CLI Commands
+```bash
+# Create new project
+python cli.py init my_drama
+
+# Generate complete drama video
+python cli.py generate projects/my_drama
+
+# Validate project configuration
+python cli.py validate projects/my_drama
+
+# List all projects
+python cli.py list
+
+# Advanced options
+python cli.py generate projects/my_drama --log-level DEBUG
+python cli.py generate projects/my_drama --override video.fps=60
+```
+
+**generate-sence Command**:
+- Generates multiple candidate images per scene (configured in `config.yaml`)
+- Saves to `projects/<project>/scenes/all/` directory
+- Simple naming: `scene_001_candidate_1.png`, `scene_001_candidate_2.png`
+- Supports sub-scenes: `scene_001_sub_001_candidate_1.png`
+- No LLM judging - all candidates saved for manual selection
+- Use case: Explore visual styles, preview before full generation, reduce costs
+
 ### Code Quality
 ```bash
 # Format code

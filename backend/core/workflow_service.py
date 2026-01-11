@@ -77,14 +77,41 @@ class WorkflowService:
             if progress_callback:
                 await progress_callback(5, "Creating project structure...")
             
-            project_path = await self.temp_project_manager.create_temp_project(
+            project_path, saved_character_images = await self.temp_project_manager.create_temp_project(
                 task_id=task_id,
                 script=script,
                 config=config,
                 character_images=character_images,
                 scene_images=scene_images
             )
-            logger.info(f"WorkflowService | Project created | path={project_path}")
+            logger.info(
+                f"WorkflowService | Project created | "
+                f"path={project_path} | "
+                f"custom_character_images={len(saved_character_images)}"
+            )
+            
+            # Build character_images config for orchestrator
+            # This tells the character_reference_agent to LOAD the custom images instead of generating
+            character_images_for_orchestrator = None
+            if saved_character_images:
+                character_images_for_orchestrator = {}
+                for char_name, image_path in saved_character_images.items():
+                    character_images_for_orchestrator[char_name] = {
+                        'mode': 'load',
+                        'images': [image_path]
+                    }
+                    logger.info(
+                        f"WorkflowService | Configured custom character image for loading | "
+                        f"character={char_name} | "
+                        f"mode=load | "
+                        f"path={image_path}"
+                    )
+                logger.info(
+                    f"WorkflowService | Built character images config for orchestrator | "
+                    f"total={len(character_images_for_orchestrator)} characters"
+                )
+            else:
+                logger.info("WorkflowService | No custom character images provided, will use AI generation")
             
             # Step 2: Load project configuration
             logger.info(f"WorkflowService | Loading project configuration | task_id={task_id}")
@@ -126,9 +153,17 @@ class WorkflowService:
                     await progress_callback(api_progress, message)
             
             # Execute generation
+            # Pass character_images_for_orchestrator to runner, which will forward to orchestrator
+            logger.debug(
+                f"WorkflowService | Starting video generation | "
+                f"has_custom_character_images={character_images_for_orchestrator is not None} | "
+                f"has_scene_images={scene_images_mapping is not None}"
+            )
+            
             video_path = await runner.run(
                 progress_callback=wrapped_progress,
-                scene_images=scene_images_mapping
+                scene_images=scene_images_mapping,
+                character_images=character_images_for_orchestrator
             )
             
             logger.info(f"WorkflowService | Video generation completed | video_path={video_path}")

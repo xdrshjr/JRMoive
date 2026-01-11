@@ -129,7 +129,7 @@ class ImageGenerationAgent(BaseAgent):
 
         Args:
             scenes: 场景列表
-            script: 完整脚本对象（可选，用于一致性增强）
+            script: 完整脚本对象（可选，用于一致性增强和上下文信息）
             reference_data: 角色参考数据（可选，用于一致性增强）
             progress_callback: 进度回调函数
             scene_images: 预生成的场景图片映射 {scene_id: image_path}
@@ -142,18 +142,22 @@ class ImageGenerationAgent(BaseAgent):
 
         self.progress_callback = progress_callback
 
+        # Store script context for prompt generation
+        self.script_context = script
+        
         # 初始化一致性增强器
         if reference_data and script:
-            self.logger.info("Initializing character consistency enhancer")
+            self.logger.info("Initializing character consistency enhancer with script context")
             self.character_enhancer = CharacterDescriptionEnhancer(reference_data)
             self.character_dict = {c.name: c for c in script.characters}
         elif script:
             # 即使没有参考数据，也可以使用角色字典来增强prompt
-            self.logger.info("Using character dictionary for prompt enhancement")
+            self.logger.info("Using character dictionary and script context for prompt enhancement")
             self.character_dict = {c.name: c for c in script.characters}
         else:
             self.character_enhancer = None
             self.character_dict = None
+            self.script_context = None
         
         # Store scene_images for reference during generation
         self.scene_images = scene_images or {}
@@ -261,8 +265,21 @@ class ImageGenerationAgent(BaseAgent):
         if self.rate_limiter:
             await self.rate_limiter.acquire()
 
-        # 生成图片提示词
-        base_prompt = scene.to_image_prompt(self.character_dict)
+        # 生成图片提示词 - 传递script_context以获得更好的上下文信息
+        script_ctx = getattr(self, 'script_context', None)
+        base_prompt = scene.to_image_prompt(self.character_dict, script_context=script_ctx)
+        
+        if script_ctx:
+            self.logger.debug(
+                f"ImageGenerationAgent | Scene prompt with context | "
+                f"scene={scene.scene_id} | "
+                f"has_script_context=True | "
+                f"script_title={script_ctx.title}"
+            )
+        else:
+            self.logger.debug(
+                f"ImageGenerationAgent | Scene prompt without context | scene={scene.scene_id}"
+            )
 
         # 使用一致性增强器增强提示词（如果可用）
         enhanced_prompt = base_prompt

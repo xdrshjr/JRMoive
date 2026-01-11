@@ -348,27 +348,44 @@ class Scene(BaseModel):
             raise ValueError("Scene description cannot be empty")
         return v.strip()
 
-    def to_image_prompt(self, character_dict: Optional[Dict[str, 'Character']] = None) -> str:
+    def to_image_prompt(
+        self, 
+        character_dict: Optional[Dict[str, 'Character']] = None,
+        script_context: Optional['Script'] = None
+    ) -> str:
         """
         将场景转换为图片生成提示词
-
+        
         Args:
             character_dict: 可选的角色字典，用于添加详细外貌描述
-
+            script_context: 可选的完整剧本对象，用于添加整体风格和上下文
+        
         Returns:
             适合AI图片生成的提示词
         """
         prompt_parts = []
-
+        
+        # 如果有剧本上下文，添加整体风格描述
+        if script_context:
+            # 添加剧本整体风格/描述作为上下文
+            if script_context.description:
+                # 提取风格关键词（避免太长）
+                desc_preview = script_context.description[:100]
+                prompt_parts.append(f"Story context: {desc_preview}")
+            
+            # 添加视觉风格标签
+            if script_context.style:
+                prompt_parts.append(f"{script_context.style} style")
+        
         # 基础场景描述
         prompt_parts.append(f"{self.location}, {self.time}")
-
+        
         # 天气和氛围
         if self.weather:
             prompt_parts.append(f"{self.weather} weather")
         if self.atmosphere:
             prompt_parts.append(f"{self.atmosphere} atmosphere")
-
+        
         # 角色和动作 - 增强版本
         if self.characters:
             if character_dict:
@@ -378,41 +395,44 @@ class Scene(BaseModel):
                     if char_name in character_dict:
                         char = character_dict[char_name]
                         desc_parts = [char_name]
-
+                        
                         # 优先使用 appearance，其次 description
                         if char.appearance:
                             desc_parts.append(f"({char.appearance})")
                         elif char.description:
                             desc_parts.append(f"({char.description})")
-
+                        
                         # 添加年龄和性别
                         if char.age and char.gender:
                             desc_parts.append(f"{char.age} years old {char.gender}")
-
+                        
                         char_descriptions.append(" ".join(desc_parts))
-
+                
                 if char_descriptions:
                     prompt_parts.append("Characters: " + ", ".join(char_descriptions))
             else:
                 # 无角色字典：仅使用名称（保持向后兼容）
                 char_desc = ", ".join(self.characters)
                 prompt_parts.append(f"characters: {char_desc}")
-
+        
         if self.action:
             prompt_parts.append(self.action)
-
+        
         # 详细描述
         prompt_parts.append(self.description)
-
+        
         # 镜头类型
         prompt_parts.append(f"{self.shot_type.value} shot")
-
-        # 视觉风格
+        
+        # 视觉风格（场景级优先于剧本级）
         if self.visual_style:
             prompt_parts.append(f"{self.visual_style} style")
         if self.color_tone:
             prompt_parts.append(f"{self.color_tone} color tone")
-
+        
+        # 添加通用的高质量关键词
+        prompt_parts.append("cinematic lighting, highly detailed, professional photography")
+        
         return ", ".join(prompt_parts)
 
     def to_video_prompt(self, character_dict: Optional[Dict[str, 'Character']] = None) -> str:

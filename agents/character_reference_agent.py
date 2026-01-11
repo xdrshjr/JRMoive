@@ -70,7 +70,26 @@ class CharacterReferenceAgent(BaseAgent):
         if not await self.validate_input(characters):
             raise ValueError("Invalid characters data")
 
-        self.logger.info(f"Starting reference processing for {len(characters)} characters")
+        self.logger.info(
+            f"CharacterReferenceAgent | Starting reference processing | "
+            f"total_characters={len(characters)} | "
+            f"has_character_images_config={character_images is not None}"
+        )
+        
+        if character_images:
+            self.logger.info(
+                f"CharacterReferenceAgent | Character images config provided | "
+                f"configured_characters={list(character_images.keys())} | "
+                f"count={len(character_images)}"
+            )
+            for char_name, char_config in character_images.items():
+                self.logger.debug(
+                    f"CharacterReferenceAgent | Character config details | "
+                    f"character={char_name} | "
+                    f"mode={char_config.get('mode', 'not_specified')} | "
+                    f"images_count={len(char_config.get('images', []))} | "
+                    f"views={char_config.get('views', [])}"
+                )
 
         reference_data = {}
 
@@ -78,23 +97,52 @@ class CharacterReferenceAgent(BaseAgent):
             char_config = character_images.get(character.name, {}) if character_images else {}
             mode = char_config.get('mode', 'generate')
 
-            self.logger.info(f"Processing character '{character.name}' with mode='{mode}'")
+            self.logger.info(
+                f"CharacterReferenceAgent | Processing character | "
+                f"name={character.name} | "
+                f"mode={mode} | "
+                f"has_config={bool(char_config)}"
+            )
 
             try:
                 if mode == 'load':
                     # 加载已有图片
+                    self.logger.info(
+                        f"CharacterReferenceAgent | Loading custom image | "
+                        f"character={character.name} | "
+                        f"images_to_load={len(char_config.get('images', []))}"
+                    )
                     views = await self._load_character_images(character, char_config)
-                    self.logger.info(f"Successfully loaded {len(char_config.get('images', []))} images for {character.name}")
+                    self.logger.info(
+                        f"CharacterReferenceAgent | Successfully loaded custom images | "
+                        f"character={character.name} | "
+                        f"images_count={len(char_config.get('images', []))} | "
+                        f"reference_image={views.get('reference_image', 'none')}"
+                    )
                 else:
                     # 生成新参考图
+                    self.logger.info(
+                        f"CharacterReferenceAgent | Generating new reference images | "
+                        f"character={character.name} | "
+                        f"reference_mode={self.reference_mode}"
+                    )
                     custom_views = char_config.get('views')
                     views = await self._generate_character_views(character, custom_views)
-                    self.logger.info(f"Successfully generated references for {character.name}")
+                    self.logger.info(
+                        f"CharacterReferenceAgent | Successfully generated reference images | "
+                        f"character={character.name} | "
+                        f"reference_image={views.get('reference_image', 'none')}"
+                    )
 
                 reference_data[character.name] = views
 
             except Exception as e:
-                self.logger.error(f"Failed to process references for {character.name}: {e}")
+                self.logger.error(
+                    f"CharacterReferenceAgent | Failed to process references | "
+                    f"character={character.name} | "
+                    f"mode={mode} | "
+                    f"error={type(e).__name__}: {str(e)}"
+                )
                 await self.on_error(e)
                 # 继续处理其他角色，不中断整个流程
                 reference_data[character.name] = {
@@ -102,6 +150,20 @@ class CharacterReferenceAgent(BaseAgent):
                     'error': str(e),
                     'reference_image': None
                 }
+
+        # Log final summary
+        success_count = sum(1 for char_data in reference_data.values() if 'error' not in char_data)
+        load_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') == 'loaded')
+        generate_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') in ['single_multi_view', 'multiple_single_view'])
+        
+        self.logger.info(
+            f"CharacterReferenceAgent | Reference processing completed | "
+            f"total={len(characters)} | "
+            f"success={success_count} | "
+            f"loaded={load_count} | "
+            f"generated={generate_count} | "
+            f"failed={len(characters) - success_count}"
+        )
 
         await self.on_complete(reference_data)
         return reference_data

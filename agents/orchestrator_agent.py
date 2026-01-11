@@ -148,20 +148,34 @@ class DramaGenerationOrchestrator(BaseAgent):
             # 步骤2：生成或加载角色参考图 (5% -> 15%)
             reference_data = None
             if self.enable_character_references and script.characters:
+                # Log character images configuration
                 if character_images:
+                    self.logger.info(
+                        f"Orchestrator | Character images config received | "
+                        f"characters={list(character_images.keys())} | "
+                        f"count={len(character_images)}"
+                    )
+                    
                     # 检查是否有需要加载的图片
                     load_count = sum(
                         1 for cfg in character_images.values()
                         if cfg.get('mode') == 'load'
                     )
+                    generate_count = len(character_images) - load_count
+                    
                     if load_count > 0:
+                        self.logger.info(
+                            f"Orchestrator | Using custom character images | "
+                            f"load={load_count} | generate={generate_count}"
+                        )
                         await self._update_progress(
-                            5, f"Processing character references ({load_count} load, "
-                            f"{len(character_images) - load_count} generate)..."
+                            5, f"Processing character references ({load_count} custom, "
+                            f"{generate_count} AI-generated)..."
                         )
                     else:
                         await self._update_progress(5, "Generating character reference sheets...")
                 else:
+                    self.logger.info("Orchestrator | No character images config, will use AI generation")
                     await self._update_progress(5, "Generating character reference sheets...")
 
                 try:
@@ -175,18 +189,39 @@ class DramaGenerationOrchestrator(BaseAgent):
                         1 for char_data in reference_data.values()
                         if 'error' not in char_data
                     )
+                    
+                    # Count loaded vs generated
+                    loaded_count = sum(
+                        1 for char_data in reference_data.values()
+                        if char_data.get('mode') == 'loaded'
+                    )
+                    generated_count = success_count - loaded_count
+
+                    self.logger.info(
+                        f"Orchestrator | Character references processed | "
+                        f"total={len(script.characters)} | "
+                        f"success={success_count} | "
+                        f"loaded={loaded_count} | "
+                        f"generated={generated_count} | "
+                        f"failed={len(script.characters) - success_count}"
+                    )
 
                     await self._update_progress(
                         15,
-                        f"Processed references for {success_count}/{len(script.characters)} characters"
+                        f"Processed references for {success_count}/{len(script.characters)} characters "
+                        f"({loaded_count} custom, {generated_count} AI)"
                     )
 
                 except Exception as e:
-                    self.logger.warning(f"Character reference processing failed: {e}")
+                    self.logger.warning(
+                        f"Orchestrator | Character reference processing failed | "
+                        f"error={type(e).__name__}: {str(e)}"
+                    )
                     self.logger.warning("Continuing with prompt-only enhancement")
                     reference_data = None
                     await self._update_progress(15, "Skipped character references (using prompt enhancement)")
             else:
+                self.logger.info("Orchestrator | Character references disabled, using prompt enhancement only")
                 await self._update_progress(15, "Character references disabled, using prompt enhancement only")
 
             # 步骤3：生成分镜图片 (15% -> 45%)

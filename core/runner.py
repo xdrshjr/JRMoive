@@ -166,13 +166,20 @@ class ProjectRunner:
                 import logging
                 logging.getLogger(__name__).debug(f"Set {env_key} from project config")
 
-    async def run(self, progress_callback: Optional[Callable] = None, scene_images: Optional[Dict[str, str]] = None) -> str:
+    async def run(
+        self,
+        progress_callback: Optional[Callable] = None,
+        scene_images: Optional[Dict[str, str]] = None,
+        character_images: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         Execute drama generation workflow
 
         Args:
             progress_callback: Optional progress callback function
             scene_images: Optional pre-generated scene images {scene_id: image_path}
+            character_images: Optional character reference images config
+                Format: {char_name: {"mode": "load", "images": [path]}}
 
         Returns:
             Path to generated video file
@@ -196,7 +203,28 @@ class ProjectRunner:
                 script_text = f.read()
 
             # Prepare character references
-            character_images = self._prepare_character_references()
+            # If character_images is provided (from workflow API), use it
+            # Otherwise, read from config (for CLI usage)
+            if character_images:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"ProjectRunner | Using provided character images | "
+                    f"count={len(character_images)} | "
+                    f"characters={list(character_images.keys())}"
+                )
+                for char_name, char_config in character_images.items():
+                    logger.info(
+                        f"ProjectRunner | Character image config | "
+                        f"character={char_name} | "
+                        f"mode={char_config.get('mode')} | "
+                        f"images_count={len(char_config.get('images', []))}"
+                    )
+            else:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info("ProjectRunner | No character images provided, reading from config")
+                character_images = self._prepare_character_references()
 
             # Create orchestrator with project-specific output directory
             output_dir = Path(self.project_config.output.directory)

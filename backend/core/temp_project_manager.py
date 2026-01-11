@@ -41,7 +41,7 @@ class TempProjectManager:
         config: Optional[WorkflowConfig] = None,
         character_images: Optional[Dict[str, str]] = None,
         scene_images: Optional[Dict[str, str]] = None
-    ) -> Path:
+    ) -> tuple[Path, Dict[str, str]]:
         """
         Create a temporary project structure
         
@@ -53,7 +53,9 @@ class TempProjectManager:
             scene_images: Scene ID -> base64/url mapping
             
         Returns:
-            Path to created project directory
+            Tuple of (project_path, saved_character_images_dict)
+            - project_path: Path to created project directory
+            - saved_character_images_dict: Character name -> saved file path mapping
         """
         logger.info(f"TempProjectManager | Creating temp project | task_id={task_id}")
         
@@ -118,14 +120,24 @@ class TempProjectManager:
             yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
         logger.info(f"TempProjectManager | Saved config | path={config_path}")
         
+        # Track saved character image paths for return
+        saved_character_images = {}
+        
         # Save character images if provided
         if character_images:
-            logger.info(f"TempProjectManager | Saving character images | count={len(character_images)}")
+            logger.info(f"TempProjectManager | Saving custom character images | count={len(character_images)}")
             for char_name, image_data in character_images.items():
+                saved_path = project_dir / "characters" / f"{self._sanitize_filename(char_name)}.png"
                 await self._save_image(
                     image_data,
-                    project_dir / "characters" / f"{self._sanitize_filename(char_name)}.png",
+                    saved_path,
                     f"character_{char_name}"
+                )
+                # Store the absolute path for later use
+                saved_character_images[char_name] = str(saved_path.absolute())
+                logger.info(
+                    f"TempProjectManager | Saved custom character image | "
+                    f"character={char_name} | path={saved_path}"
                 )
         
         # Save scene images if provided
@@ -138,8 +150,13 @@ class TempProjectManager:
                     f"scene_{scene_id}"
                 )
         
-        logger.info(f"TempProjectManager | Temp project created successfully | path={project_dir}")
-        return project_dir
+        logger.info(
+            f"TempProjectManager | Temp project created successfully | "
+            f"path={project_dir} | "
+            f"custom_character_images={len(saved_character_images)}"
+        )
+        
+        return project_dir, saved_character_images
     
     def _generate_config_dict(
         self,

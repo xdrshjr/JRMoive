@@ -21,7 +21,7 @@ scenes:
     time: "清晨"
     weather: "晴朗"
     atmosphere: "温馨安静"
-    description: "阳光透过大窗户洒进咖啡馆，小明坐在窗边的位置，手里拿着咖啡杯"
+    description: "阳光透过大窗户洒进咖啡馆，小明坐在窗边的位置，手里拿着咖啡杯，小红坐在对面"
     shot_type: "medium_shot"
     camera_movement: "static"
     duration: 8.0
@@ -32,23 +32,24 @@ scenes:
     base_image_filename: null
     characters:
       - "小明"
+      - "小红"
     dialogues:
       - character: "小明"
         content: "今天又是充满希望的一天！"
         emotion: "微笑"
         voice_style: "温柔"
     narrations:
-      - content: "新的一天开始了，小明像往常一样来到他最喜欢的咖啡馆。"
+      - content: "新的一天开始了，小明像往常一样来到他最喜欢的咖啡馆，小红坐在对面"
         voice_style: "平静"
     sound_effects:
       - description: "咖啡馆环境音"
         timing: 2.0
     sub_scenes:
       - sub_scene_id: "scene_001_sub_001"
-        description: "特写咖啡杯冒出的热气，杯中拿铁艺术图案清晰可见"
+        description: "特写咖啡杯冒出的热气，杯中拿铁艺术图案清晰可见，没有人说话"
         shot_type: "close_up"
         camera_movement: "static"
-        duration: 3.0
+        duration: 10.0
         action: null
         visual_style: null
         color_tone: null
@@ -58,10 +59,10 @@ scenes:
         sound_effects: []
       
       - sub_scene_id: "scene_001_sub_002"
-        description: "透过咖啡馆窗户看到的繁忙街道，行人匆匆走过"
+        description: "透过咖啡馆窗户看到的繁忙街道，行人匆匆走过，没有人说话"
         shot_type: "long_shot"
         camera_movement: "pan"
-        duration: 3.0
+        duration: 10.0
         action: "窗外行人来往，车辆缓缓驶过"
         visual_style: null
         color_tone: null

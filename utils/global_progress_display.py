@@ -148,6 +148,10 @@ class GlobalProgressDisplay:
 
         elapsed = (datetime.now() - self.start_time).total_seconds()
 
+        # 避免除以零错误：如果时间太短（小于0.1秒），无法准确预估
+        if elapsed < 0.1:
+            return None
+
         # 计算平均速度
         speed = self.current_progress / elapsed  # percent per second
 

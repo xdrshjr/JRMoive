@@ -310,96 +310,147 @@ class VideoGenerationAgent(BaseAgent):
             f"Generating hierarchical scene {scene_id} with {len(scene.sub_scenes)} sub-scenes"
         )
         
-        # Step 1: 生成基础场景视频
-        self.logger.info(f"Step 1/4: Generating base scene video for {scene_id}")
-        base_video_result = await self._generate_simple_scene(
-            image_result,
-            scene,
-            character_dict
-        )
-        base_video_path = base_video_result['video_path']
-        self.logger.info(f"Base scene video generated: {base_video_path}")
-        
-        # Step 2: 从基础视频提取帧
-        self.logger.info(
-            f"Step 2/4: Extracting frame at index {scene.extract_frame_index} from base video"
-        )
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        extracted_frame_path = self.output_dir / f"{scene_id}_extracted_frame_{timestamp}.png"
-        
         try:
-            self.ffmpeg_processor.extract_frame(
-                video_path=base_video_path,
-                frame_index=scene.extract_frame_index,
-                output_path=str(extracted_frame_path)
-            )
-            self.logger.info(f"Frame extracted successfully: {extracted_frame_path}")
-        except Exception as e:
-            self.logger.error(f"Failed to extract frame from base video: {e}")
-            raise
-        
-        # Step 3: 生成所有子场景视频
-        self.logger.info(f"Step 3/4: Generating {len(scene.sub_scenes)} sub-scene videos")
-        sub_scene_results = []
-        
-        for idx, sub_scene in enumerate(scene.sub_scenes, 1):
-            self.logger.info(
-                f"Generating sub-scene {idx}/{len(scene.sub_scenes)}: {sub_scene.sub_scene_id}"
+            # Step 1: 生成基础场景视频
+            self.logger.info(f"Step 1/4: Generating base scene video for {scene_id}")
+            base_video_result = await self._generate_simple_scene(
+                image_result,
+                scene,
+                character_dict
             )
             
-            try:
-                sub_video_result = await self._generate_subscene_video(
-                    extracted_frame_path=str(extracted_frame_path),
-                    sub_scene=sub_scene,
-                    parent_scene=scene,
-                    character_dict=character_dict
-                )
-                sub_scene_results.append(sub_video_result)
-                self.logger.info(
-                    f"Sub-scene video generated: {sub_video_result['video_path']}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to generate sub-scene {sub_scene.sub_scene_id}: {e}"
-                )
-                # 继续生成其他子场景，不因为一个失败而中断
-                continue
-        
-        # Step 4: 拼接所有视频
-        self.logger.info(
-            f"Step 4/4: Concatenating base video with {len(sub_scene_results)} sub-scene videos"
-        )
-        
-        # 准备要拼接的视频路径列表
-        video_paths_to_concat = [base_video_path]
-        video_paths_to_concat.extend([r['video_path'] for r in sub_scene_results])
-        
-        # 生成最终拼接视频的路径
-        final_video_path = self.output_dir / f"{scene_id}_final_{timestamp}.mp4"
-        
-        try:
-            self.ffmpeg_processor.concatenate_videos_filter(
-                video_paths=video_paths_to_concat,
-                output_path=str(final_video_path)
+            # 检查基础场景是否生成成功
+            if not base_video_result.get('success', False):
+                self.logger.error(f"Base scene generation failed for {scene_id}")
+                return {
+                    'success': False,
+                    'scene_id': scene_id,
+                    'error': 'Base scene generation failed',
+                    'error_type': 'base_scene_failed',
+                    'video_path': None
+                }
+            
+            base_video_path = base_video_result['video_path']
+            self.logger.info(f"Base scene video generated: {base_video_path}")
+            
+            # Step 2: 从基础视频提取帧
+            self.logger.info(
+                f"Step 2/4: Extracting frame at index {scene.extract_frame_index} from base video"
             )
-            self.logger.info(f"Final scene video created: {final_video_path}")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            extracted_frame_path = self.output_dir / f"{scene_id}_extracted_frame_{timestamp}.png"
+            
+            try:
+                self.ffmpeg_processor.extract_frame(
+                    video_path=base_video_path,
+                    frame_index=scene.extract_frame_index,
+                    output_path=str(extracted_frame_path)
+                )
+                self.logger.info(f"Frame extracted successfully: {extracted_frame_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to extract frame from base video: {e}")
+                return {
+                    'success': False,
+                    'scene_id': scene_id,
+                    'error': f'Frame extraction failed: {str(e)}',
+                    'error_type': 'frame_extraction_failed',
+                    'video_path': None
+                }
+            
+            # Step 3: 生成所有子场景视频
+            self.logger.info(f"Step 3/4: Generating {len(scene.sub_scenes)} sub-scene videos")
+            sub_scene_results = []
+            failed_sub_scenes = []
+            
+            for idx, sub_scene in enumerate(scene.sub_scenes, 1):
+                self.logger.info(
+                    f"Generating sub-scene {idx}/{len(scene.sub_scenes)}: {sub_scene.sub_scene_id}"
+                )
+                
+                try:
+                    sub_video_result = await self._generate_subscene_video(
+                        extracted_frame_path=str(extracted_frame_path),
+                        sub_scene=sub_scene,
+                        parent_scene=scene,
+                        character_dict=character_dict
+                    )
+                    sub_scene_results.append(sub_video_result)
+                    self.logger.info(
+                        f"Sub-scene video generated: {sub_video_result['video_path']}"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to generate sub-scene {sub_scene.sub_scene_id}: {e}"
+                    )
+                    failed_sub_scenes.append(sub_scene.sub_scene_id)
+                    # 继续生成其他子场景，不因为一个失败而中断
+                    continue
+            
+            # 如果所有子场景都失败了，记录警告但仍使用基础视频
+            if len(sub_scene_results) == 0 and len(scene.sub_scenes) > 0:
+                self.logger.warning(
+                    f"All {len(scene.sub_scenes)} sub-scenes failed for {scene_id}. "
+                    f"Using base video only."
+                )
+            elif failed_sub_scenes:
+                self.logger.warning(
+                    f"{len(failed_sub_scenes)} sub-scenes failed for {scene_id}: "
+                    f"{', '.join(failed_sub_scenes)}"
+                )
+            
+            # Step 4: 拼接所有视频
+            video_paths_to_concat = [base_video_path]
+            video_paths_to_concat.extend([r['video_path'] for r in sub_scene_results])
+            
+            self.logger.info(
+                f"Step 4/4: Concatenating base video with {len(sub_scene_results)} sub-scene videos"
+            )
+            
+            # 生成最终拼接视频的路径
+            final_video_path = self.output_dir / f"{scene_id}_final_{timestamp}.mp4"
+            
+            try:
+                self.ffmpeg_processor.concatenate_videos_filter(
+                    video_paths=video_paths_to_concat,
+                    output_path=str(final_video_path)
+                )
+                self.logger.info(f"Final scene video created: {final_video_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to concatenate videos for {scene_id}: {e}")
+                return {
+                    'success': False,
+                    'scene_id': scene_id,
+                    'error': f'Video concatenation failed: {str(e)}',
+                    'error_type': 'concatenation_failed',
+                    'video_path': None
+                }
+            
+            # 构建返回结果 - 标记为成功
+            self.logger.info(f"✓ Hierarchical scene {scene_id} generated successfully")
+            return {
+                'success': True,
+                'scene_id': scene_id,
+                'video_path': str(final_video_path),
+                'duration': scene.duration,
+                'config': base_video_result['config'],
+                'api_response': base_video_result['api_response'],
+                'dialogues': [d.model_dump() for d in scene.dialogues],
+                'has_subscenes': True,
+                'base_video_path': base_video_path,
+                'sub_scene_videos': [r['video_path'] for r in sub_scene_results],
+                'failed_sub_scenes': failed_sub_scenes,
+                'extracted_frame_path': str(extracted_frame_path)
+            }
+            
         except Exception as e:
-            self.logger.error(f"Failed to concatenate videos: {e}")
-            raise
-        
-        # 构建返回结果
-        return {
-            'scene_id': scene_id,
-            'video_path': str(final_video_path),
-            'duration': scene.duration,
-            'config': base_video_result['config'],
-            'api_response': base_video_result['api_response'],
-            'dialogues': [d.model_dump() for d in scene.dialogues],
-            'has_subscenes': True,
-            'base_video_path': base_video_path,
-            'sub_scene_videos': [r['video_path'] for r in sub_scene_results],
-            'extracted_frame_path': str(extracted_frame_path)
-        }
+            self.logger.error(f"✗ Hierarchical scene {scene_id} failed with unexpected error: {e}")
+            return {
+                'success': False,
+                'scene_id': scene_id,
+                'error': str(e),
+                'error_type': 'unexpected_error',
+                'video_path': None
+            }
 
     async def _generate_subscene_video(
         self,

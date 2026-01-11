@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, ImageGrid, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { processImageResults } from '@/lib/imageHelpers';
 import { Scene, APIException } from '@/lib/types';
+import { parseYamlScript, extractScenesFromParsedScript } from '@/lib/yamlParser';
 
 interface Step3SceneImagesProps {
   polishedScript: string;
@@ -20,67 +21,73 @@ export const Step3SceneImages: React.FC<Step3SceneImagesProps> = ({
   onBack,
   initialScenes = [],
 }) => {
-  const [scenes, setScenes] = useState<Scene[]>(
-    initialScenes.length > 0
-      ? initialScenes
-      : extractScenesFromScript(polishedScript)
-  );
+  const [scenes, setScenes] = useState<Scene[]>([]);
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function extractScenesFromScript(script: string): Scene[] {
-    // Simple extraction - look for scene headers
-    // TODO: Backend - Create /api/v1/scripts/parse endpoint for better parsing
-    const lines = script.split('\n');
-    const sceneList: Scene[] = [];
-    let sceneCounter = 1;
+  // Extract scenes when component mounts or script changes
+  useEffect(() => {
+    if (initialScenes.length > 0) {
+      setScenes(initialScenes);
+    } else {
+      const extracted = extractScenesFromScript(polishedScript);
+      setScenes(extracted);
+    }
+  }, [polishedScript, initialScenes]);
 
-    lines.forEach((line) => {
-      // Match patterns like "## Scene 1:" or "## 场景1:"
-      const match = line.match(/^##\s*(Scene|场景)\s*(\d+)[\s:：]*(.*)/i);
-      if (match) {
-        const description = match[3] || `Scene ${sceneCounter}`;
-        sceneList.push({
-          id: `scene_${sceneCounter}`,
-          description,
-          location: extractLocation(description),
-          time: extractTime(description),
-          mode: 'generate',
-          imageCount: 3,
-          generatedImages: [],
-          selectedImage: null,
-        });
-        sceneCounter++;
-      }
+  function extractScenesFromScript(script: string): Scene[] {
+    logger.info('Step3SceneImages', 'Starting scene extraction', {
+      scriptLength: script.length,
     });
 
-    // If no scenes found, create a default one
-    if (sceneList.length === 0) {
-      sceneList.push({
-        id: 'scene_1',
-        description: 'Main scene from the script',
-        location: 'General setting',
-        time: 'Day',
-        mode: 'generate',
-        imageCount: 3,
-        generatedImages: [],
-        selectedImage: null,
+    // Parse YAML
+    const parseResult = parseYamlScript(script);
+    
+    if (!parseResult.success || !parseResult.data) {
+      logger.error('Step3SceneImages', 'Failed to parse script', {
+        error: parseResult.error,
       });
+      return createDefaultScene();
     }
 
-    return sceneList;
+    // Extract scenes
+    const extractedScenes = extractScenesFromParsedScript(parseResult.data);
+    
+    if (extractedScenes.length === 0) {
+      logger.warn('Step3SceneImages', 'No scenes found, using default');
+      return createDefaultScene();
+    }
+
+    // Convert to Scene type
+    const scenes = extractedScenes.map(scene => ({
+      id: scene.id,
+      description: scene.description,
+      location: scene.location,
+      time: scene.time,
+      mode: 'generate' as const,
+      imageCount: 3,
+      generatedImages: [],
+      selectedImage: null,
+    }));
+
+    logger.info('Step3SceneImages', `Successfully extracted ${scenes.length} scenes`, {
+      sceneIds: scenes.map(s => s.id),
+    });
+
+    return scenes;
   }
 
-  function extractLocation(description: string): string {
-    // Simple heuristic to extract location
-    const match = description.match(/(办公室|咖啡馆|室内|室外|公园|街道|office|cafe|indoor|outdoor|park|street)/i);
-    return match ? match[0] : 'General setting';
-  }
-
-  function extractTime(description: string): string {
-    // Simple heuristic to extract time
-    const match = description.match(/(早晨|上午|中午|下午|傍晚|晚上|夜晚|morning|afternoon|evening|night|day)/i);
-    return match ? match[0] : 'Day';
+  function createDefaultScene(): Scene[] {
+    return [{
+      id: 'scene_001',
+      description: 'Main scene from the script',
+      location: 'General setting',
+      time: 'Day',
+      mode: 'generate',
+      imageCount: 3,
+      generatedImages: [],
+      selectedImage: null,
+    }];
   }
 
   const handleGenerateImages = async (sceneId: string) => {

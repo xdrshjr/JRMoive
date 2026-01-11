@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button, Input, ImageGrid, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { processImageResults } from '@/lib/imageHelpers';
 import { Character, APIException } from '@/lib/types';
+import { parseYamlScript, extractCharactersFromParsedScript } from '@/lib/yamlParser';
 
 interface Step2CharacterImagesProps {
   polishedScript: string;
@@ -20,46 +21,69 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
   onBack,
   initialCharacters = [],
 }) => {
-  const [characters, setCharacters] = useState<Character[]>(
-    initialCharacters.length > 0
-      ? initialCharacters
-      : extractCharactersFromScript(polishedScript)
-  );
+  const [characters, setCharacters] = useState<Character[]>([]);
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // Extract characters when component mounts or script changes
+  useEffect(() => {
+    if (initialCharacters.length > 0) {
+      setCharacters(initialCharacters);
+    } else {
+      const extracted = extractCharactersFromScript(polishedScript);
+      setCharacters(extracted);
+    }
+  }, [polishedScript, initialCharacters]);
 
   function extractCharactersFromScript(script: string): Character[] {
-    logger.debug('Step2CharacterImages', 'Starting character extraction from script', {
+    logger.info('Step2CharacterImages', 'Starting character extraction', {
       scriptLength: script.length,
     });
 
-    // Simple extraction - look for character names in dialogue format
-    // TODO: Backend - Create /api/v1/scripts/parse endpoint for better parsing
-    const lines = script.split('\n');
-    const characterNames = new Set<string>();
+    // Parse YAML
+    const parseResult = parseYamlScript(script);
+    
+    if (!parseResult.success) {
+      const errorMsg = `Failed to parse script: ${parseResult.error}`;
+      logger.error('Step2CharacterImages', errorMsg);
+      setParseError(errorMsg);
+      return [];
+    }
 
-    lines.forEach((line) => {
-      // Match patterns like "Character Name:" or "CHARACTER NAME:"
-      const match = line.match(/^([A-Z][a-zA-Z\s]+):/);
-      if (match) {
-        characterNames.add(match[1].trim());
-      }
-    });
+    if (!parseResult.data) {
+      const errorMsg = 'No data found in parsed script';
+      logger.error('Step2CharacterImages', errorMsg);
+      setParseError(errorMsg);
+      return [];
+    }
 
-    const extractedCharacters = Array.from(characterNames).map((name) => ({
-      name,
-      description: `Character ${name} from the script`,
+    // Extract characters
+    const extractedChars = extractCharactersFromParsedScript(parseResult.data);
+    
+    if (extractedChars.length === 0) {
+      const errorMsg = 'No characters found in script. Please ensure your script has a "characters" section or characters defined in scenes.';
+      logger.warn('Step2CharacterImages', errorMsg);
+      setParseError(errorMsg);
+      return [];
+    }
+
+    // Convert to Character type
+    const characters = extractedChars.map(char => ({
+      name: char.name,
+      description: char.description,
       mode: 'generate' as const,
       imageCount: 3,
       generatedImages: [],
       selectedImage: null,
     }));
 
-    logger.info('Step2CharacterImages', `Extracted ${extractedCharacters.length} characters from script`, {
-      characters: extractedCharacters.map(c => c.name),
+    logger.info('Step2CharacterImages', `Successfully extracted ${characters.length} characters`, {
+      characters: characters.map(c => c.name),
     });
 
-    return extractedCharacters;
+    setParseError(null);
+    return characters;
   }
 
   const handleGenerateImages = async (characterName: string) => {
@@ -82,11 +106,15 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
       
       const imagePromises = Array.from({ length: character.imageCount }).map((_, index) => {
         logger.debug('Step2CharacterImages', `Generating image ${index + 1}/${character.imageCount} for ${characterName}`);
+        // Build character reference prompt similar to CLI
+        const prompt = buildCharacterReferencePrompt(character);
+        logger.debug('Step2CharacterImages', `Image ${index + 1} prompt`, { promptLength: prompt.length });
+        
         return apiClient.generateImage({
-          prompt: `Character reference sheet, ${character.description}, multiple angles, consistent style, professional character design`,
+          prompt,
           service: 'doubao',
-          width: 1024,
-          height: 1024,
+          width: 1920,
+          height: 1920,
           optimize_prompt: true,
         });
       });
@@ -261,8 +289,67 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
             </svg>
             <span>Found {characters.length} character{characters.length !== 1 ? 's' : ''} in your script</span>
           </div>
+          
+          {/* Parse Error Display */}
+          {parseError && (
+            <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-apple-md">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
+                    Script Parsing Issue
+                  </h4>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-400">{parseError}</p>
+                  <button
+                    onClick={() => {
+                      logger.info('Step2CharacterImages', 'User clicked to view script in console');
+                      console.log('=== SCRIPT CONTENT ===');
+                      console.log(polishedScript);
+                      console.log('=== END SCRIPT ===');
+                    }}
+                    className="mt-2 text-xs text-yellow-600 dark:text-yellow-300 underline hover:no-underline"
+                  >
+                    Click to log script to browser console for debugging
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
+
+      {/* No Characters Found Warning */}
+      {characters.length === 0 && (
+        <Card>
+          <div className="text-center py-8">
+            <svg className="w-16 h-16 mx-auto text-text-tertiary mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <h3 className="text-lg font-semibold text-text-primary mb-2">No Characters Found</h3>
+            <p className="text-text-secondary mb-4">
+              Your script doesn't seem to have any characters defined. Please go back and ensure your script includes:
+            </p>
+            <ul className="text-left max-w-md mx-auto space-y-2 text-sm text-text-secondary mb-6">
+              <li className="flex items-start gap-2">
+                <span className="text-apple-blue">•</span>
+                <span>A <code className="px-1 py-0.5 bg-bg-secondary rounded text-xs">characters:</code> section with character definitions</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-apple-blue">•</span>
+                <span>Or characters mentioned in scene dialogues</span>
+              </li>
+            </ul>
+            <Button onClick={onBack} variant="secondary">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Back to Edit Script
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Character Cards */}
       <div className="space-y-6">
@@ -506,6 +593,79 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
     </div>
   );
 };
+
+/**
+ * Build character reference prompt similar to CLI implementation
+ * Based on agents/character_reference_agent.py
+ */
+function buildCharacterReferencePrompt(character: Character): string {
+  const promptParts: string[] = [];
+
+  // Style keywords (photorealistic style - matching CLI)
+  promptParts.push(
+    'photorealistic, realistic photography, real person, ' +
+    'cinematic lighting, professional photography, ' +
+    'highly detailed, natural skin texture, realistic features'
+  );
+
+  // Character name
+  promptParts.push(character.name);
+
+  // Extract age and gender from description if available
+  const ageMatch = character.description.match(/Age:\s*(\d+)/i);
+  const genderMatch = character.description.match(/Gender:\s*(male|female)/i);
+  
+  if (ageMatch && genderMatch) {
+    const age = parseInt(ageMatch[1]);
+    const gender = genderMatch[1];
+    const ageDescriptor = getAgeDescriptor(age);
+    promptParts.push(`${ageDescriptor} ${age}-year-old ${gender}`);
+  } else if (genderMatch) {
+    promptParts.push(genderMatch[1]);
+  }
+
+  // Appearance details
+  const appearanceMatch = character.description.match(/Appearance:\s*([^.,]+)/i);
+  if (appearanceMatch) {
+    promptParts.push(appearanceMatch[1].trim());
+  } else {
+    // Use full description as fallback (but clean it up)
+    const cleanDesc = character.description
+      .replace(/Age:\s*\d+,?\s*/gi, '')
+      .replace(/Gender:\s*(male|female),?\s*/gi, '')
+      .trim();
+    if (cleanDesc) {
+      promptParts.push(cleanDesc);
+    }
+  }
+
+  // Consistency keywords - matching CLI
+  promptParts.push(
+    'character reference sheet',
+    'multiple angles',
+    'front view',
+    'consistent character design',
+    'professional character reference',
+    'high detail',
+    'clear features',
+    '8k quality'
+  );
+
+  return promptParts.join(', ');
+}
+
+/**
+ * Get age descriptor based on age number
+ * Matching CLI implementation in character_reference_agent.py
+ */
+function getAgeDescriptor(age: number): string {
+  if (age < 13) return 'young child';
+  if (age < 20) return 'teenage';
+  if (age < 30) return 'young adult';
+  if (age < 50) return 'middle-aged';
+  if (age < 70) return 'mature';
+  return 'elderly';
+}
 
 export default Step2CharacterImages;
 

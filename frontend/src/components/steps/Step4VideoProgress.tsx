@@ -56,6 +56,14 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
     addLog('info', 'WorkflowGeneration', 'Starting full workflow generation pipeline');
     
     try {
+      // Clean the script - remove markdown code blocks if present
+      let cleanedScript = polishedScript.trim();
+      const codeBlockMatch = cleanedScript.match(/^```(?:yaml|yml)?\s*\n([\s\S]*?)\n```$/);
+      if (codeBlockMatch) {
+        cleanedScript = codeBlockMatch[1].trim();
+        addLog('debug', 'WorkflowGeneration', 'Stripped markdown code blocks from script');
+      }
+
       // Prepare character images mapping
       const characterImages: Record<string, string> = {};
       for (const char of characters) {
@@ -79,9 +87,9 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       );
       setCurrentStage('Submitting Workflow');
 
-      // Call workflow API
+      // Call workflow API with cleaned script
       const response = await apiClient.startWorkflow({
-        script: polishedScript,
+        script: cleanedScript,
         characterImages: Object.keys(characterImages).length > 0 ? characterImages : undefined,
         sceneImages: Object.keys(sceneImages).length > 0 ? sceneImages : undefined,
         config: {

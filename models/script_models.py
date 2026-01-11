@@ -373,8 +373,8 @@ class Scene(BaseModel):
                 desc_preview = script_context.description[:100]
                 prompt_parts.append(f"Story context: {desc_preview}")
             
-            # 添加视觉风格标签
-            if script_context.style:
+            # 添加视觉风格标签（如果存在）
+            if hasattr(script_context, 'style') and script_context.style:
                 prompt_parts.append(f"{script_context.style} style")
         
         # 基础场景描述

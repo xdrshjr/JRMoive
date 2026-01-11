@@ -104,13 +104,79 @@ async def health_check():
 
 
 if __name__ == "__main__":
+    import argparse
     import uvicorn
+    import os
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Run AI Movie Agent API server")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG logging level"
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Set logging level (overrides --debug)"
+    )
+    parser.add_argument(
+        "--host",
+        default=settings.host,
+        help=f"Host to bind to (default: {settings.host})"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=settings.port,
+        help=f"Port to bind to (default: {settings.port})"
+    )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        default=True,
+        help="Enable auto-reload on code changes (default: True)"
+    )
+    parser.add_argument(
+        "--no-reload",
+        dest="reload",
+        action="store_false",
+        help="Disable auto-reload"
+    )
+    
+    args = parser.parse_args()
+    
+    # Determine log level
+    if args.log_level:
+        log_level = args.log_level
+    elif args.debug:
+        log_level = "DEBUG"
+    else:
+        log_level = settings.log_level
+    
+    # Update settings with CLI arguments
+    settings.log_level = log_level
+    
+    # IMPORTANT: Set environment variable so child processes also get DEBUG level
+    os.environ['LOG_LEVEL'] = log_level
+    
+    # Re-initialize logging with new level
+    setup_logging(log_level=log_level)
+    
+    logger.info("=" * 60)
+    logger.info(f"Starting {settings.api_title} v{settings.api_version}")
+    logger.info(f"Server: {args.host}:{args.port}")
+    logger.info(f"Log Level: {log_level}")
+    logger.info(f"Auto-reload: {args.reload}")
+    logger.info(f"Image Service: {settings.image_service_type}")
+    logger.info(f"Video Service: Veo3 ({settings.veo3_model})")
+    logger.info("=" * 60)
     
     uvicorn.run(
         "backend.main:app",
-        host=settings.host,
-        port=settings.port,
-        reload=True,
-        log_level=settings.log_level.lower()
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level=log_level.lower()
     )
 

@@ -153,15 +153,18 @@ class CharacterReferenceAgent(BaseAgent):
 
         # Log final summary
         success_count = sum(1 for char_data in reference_data.values() if 'error' not in char_data)
-        load_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') == 'loaded')
-        generate_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') in ['single_multi_view', 'multiple_single_view'])
+        # Count loaded (directly loaded without generation) vs generated (including from custom base)
+        loaded_fallback_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') == 'loaded_fallback')
+        generated_from_custom_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') == 'generated_from_custom')
+        generated_count = sum(1 for char_data in reference_data.values() if char_data.get('mode') in ['single_multi_view', 'multiple_single_view'])
         
         self.logger.info(
             f"CharacterReferenceAgent | Reference processing completed | "
             f"total={len(characters)} | "
             f"success={success_count} | "
-            f"loaded={load_count} | "
-            f"generated={generate_count} | "
+            f"generated_from_ai={generated_count} | "
+            f"generated_from_custom={generated_from_custom_count} | "
+            f"loaded_fallback={loaded_fallback_count} | "
             f"failed={len(characters) - success_count}"
         )
 
@@ -186,14 +189,20 @@ class CharacterReferenceAgent(BaseAgent):
         char_config: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        加载已有的角色参考图片
+        加载用户上传的角色图片，并基于该图片生成角色建模参考图
+        
+        正确流程：
+        1. 验证用户上传的基准图存在
+        2. 使用图生图技术，基于用户上传的基准图生成角色建模图（多视角参考表）
+        3. 将生成的角色建模图保存到character_references目录
+        4. 返回生成的角色建模图路径
 
         Args:
             character: 角色对象
-            char_config: 角色配置，包含images列表
+            char_config: 角色配置，包含images列表（用户上传的基准图）
 
         Returns:
-            视图数据字典: {mode: 'loaded', reference_image: path, images: [paths]}
+            视图数据字典: {mode: 'generated_from_custom', reference_image: path, seed: int, base_image: original_path}
         """
         images = char_config.get('images', [])
 
@@ -211,14 +220,63 @@ class CharacterReferenceAgent(BaseAgent):
                 f"Character '{character.name}': image files not found: {', '.join(missing_images)}"
             )
 
-        self.logger.info(f"Loaded {len(images)} images for character '{character.name}'")
+        # 使用第一张图片作为基准图
+        base_image_path = images[0]
+        self.logger.info(
+            f"CharacterReferenceAgent | Using custom base image | "
+            f"character={character.name} | "
+            f"base_image={base_image_path}"
+        )
 
-        return {
-            'mode': 'loaded',
-            'reference_image': images[0],  # 使用第一张作为主参考图
-            'images': images,
-            'character_name': character.name
-        }
+        # 基于用户上传的基准图生成角色建模参考图
+        self.logger.info(
+            f"CharacterReferenceAgent | Generating character modeling sheet from custom image | "
+            f"character={character.name} | "
+            f"reference_mode={self.reference_mode}"
+        )
+        
+        try:
+            # 生成角色专用seed（保持一致性）
+            char_seed = hash(character.name) % (2**32)
+            
+            # 调用图生图生成角色建模参考图
+            modeling_sheet = await self._generate_modeling_sheet_from_base_image(
+                character=character,
+                base_image_path=base_image_path,
+                char_seed=char_seed
+            )
+            
+            self.logger.info(
+                f"CharacterReferenceAgent | Successfully generated modeling sheet from custom image | "
+                f"character={character.name} | "
+                f"modeling_sheet={modeling_sheet.get('reference_image', 'none')} | "
+                f"seed={char_seed}"
+            )
+            
+            # 添加原始基准图信息
+            modeling_sheet['base_image'] = base_image_path
+            modeling_sheet['mode'] = 'generated_from_custom'
+            
+            return modeling_sheet
+            
+        except Exception as e:
+            self.logger.error(
+                f"CharacterReferenceAgent | Failed to generate modeling sheet from custom image | "
+                f"character={character.name} | "
+                f"error={type(e).__name__}: {str(e)}"
+            )
+            # 降级：如果生成失败，仍然返回原始图片
+            self.logger.warning(
+                f"CharacterReferenceAgent | Falling back to original custom image | "
+                f"character={character.name}"
+            )
+            return {
+                'mode': 'loaded_fallback',
+                'reference_image': base_image_path,
+                'images': images,
+                'character_name': character.name,
+                'error': str(e)
+            }
 
     async def _generate_character_views(
         self,
@@ -245,6 +303,100 @@ class CharacterReferenceAgent(BaseAgent):
             # 多张单视角模式（原有逻辑）
             views_to_generate = custom_views or self.reference_views
             return await self._generate_multiple_single_views(character, char_seed, views_to_generate)
+
+    async def _generate_modeling_sheet_from_base_image(
+        self,
+        character: Character,
+        base_image_path: str,
+        char_seed: int
+    ) -> Dict[str, Any]:
+        """
+        基于用户上传的基准图，生成角色建模参考图（使用图生图技术）
+        
+        这是修复后的正确流程：用户上传的图片作为输入，
+        生成包含多个视角的角色建模图，保存到character_references目录
+
+        Args:
+            character: 角色对象
+            base_image_path: 用户上传的基准图路径
+            char_seed: 角色专用seed
+
+        Returns:
+            视图数据字典: {'reference_image': image_path, 'seed': int, 'mode': 'generated_from_custom'}
+        """
+        self.logger.info(
+            f"CharacterReferenceAgent | Generating modeling sheet using image-to-image | "
+            f"character={character.name} | "
+            f"base_image={base_image_path} | "
+            f"seed={char_seed}"
+        )
+        
+        # 构建基础提示词
+        base_prompt = self._build_character_base_prompt(character)
+
+        # 创建角色专用目录
+        char_dir = self.output_dir / character.name.replace(" ", "_")
+        char_dir.mkdir(parents=True, exist_ok=True)
+
+        # 构建用于图生图的提示词 - 强调基于原图生成多视角参考表
+        background_style = "clean white background" if self.art_style != 'realistic' else "studio lighting, neutral background"
+        modeling_prompt = (
+            f"Based on the character in the reference image, create a character reference sheet. "
+            f"{base_prompt}, "
+            f"character design sheet with multiple views in one image, "
+            f"showing: front view, side profile view, close-up portrait, full body view, "
+            f"professional character turnaround sheet, {background_style}, "
+            f"maintain the exact same character appearance from the reference image, "
+            f"consistent character design, high detail, 8k quality"
+        )
+
+        # 生成文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{character.name}_modeling_sheet_{timestamp}.png"
+        save_path = char_dir / filename
+
+        self.logger.debug(
+            f"CharacterReferenceAgent | Image-to-image generation params | "
+            f"prompt_preview={modeling_prompt[:100]}... | "
+            f"reference_image={base_image_path} | "
+            f"output_path={save_path}"
+        )
+
+        try:
+            # 使用图生图生成角色建模参考表
+            result = await self.service.generate_and_save(
+                prompt=modeling_prompt,
+                save_path=save_path,
+                width=self.reference_size * 2,  # 更宽以容纳多个视角
+                height=self.reference_size,
+                quality='high',
+                seed=char_seed,
+                cfg_scale=self.reference_cfg_scale,
+                steps=self.reference_steps,
+                reference_image=base_image_path,  # 关键：使用用户上传的图片作为参考
+                reference_image_weight=0.8  # 较高的权重以保持角色一致性
+            )
+
+            self.logger.info(
+                f"CharacterReferenceAgent | Successfully generated modeling sheet | "
+                f"character={character.name} | "
+                f"output={result['image_path']}"
+            )
+
+            return {
+                'reference_image': result['image_path'],
+                'seed': char_seed,
+                'mode': 'generated_from_custom',
+                'character_name': character.name
+            }
+
+        except Exception as e:
+            self.logger.error(
+                f"CharacterReferenceAgent | Image-to-image generation failed | "
+                f"character={character.name} | "
+                f"error={type(e).__name__}: {str(e)}"
+            )
+            raise
 
     async def _generate_single_multi_view(self, character: Character, char_seed: int) -> Dict[str, Any]:
         """

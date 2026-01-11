@@ -10,4 +10,5 @@ export { ProgressBar } from './ProgressBar';
 export { ImageGrid } from './ImageGrid';
 export { LogViewer } from './LogViewer';
 export { LoadingAnimation } from './LoadingAnimation';
+export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs';
 

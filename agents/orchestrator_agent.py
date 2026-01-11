@@ -190,26 +190,34 @@ class DramaGenerationOrchestrator(BaseAgent):
                         if 'error' not in char_data
                     )
                     
-                    # Count loaded vs generated
-                    loaded_count = sum(
+                    # Count by mode: generated_from_custom, generated (AI), or loaded_fallback
+                    generated_from_custom_count = sum(
                         1 for char_data in reference_data.values()
-                        if char_data.get('mode') == 'loaded'
+                        if char_data.get('mode') == 'generated_from_custom'
                     )
-                    generated_count = success_count - loaded_count
+                    generated_ai_count = sum(
+                        1 for char_data in reference_data.values()
+                        if char_data.get('mode') in ['single_multi_view', 'multiple_single_view']
+                    )
+                    loaded_fallback_count = sum(
+                        1 for char_data in reference_data.values()
+                        if char_data.get('mode') == 'loaded_fallback'
+                    )
 
                     self.logger.info(
                         f"Orchestrator | Character references processed | "
                         f"total={len(script.characters)} | "
                         f"success={success_count} | "
-                        f"loaded={loaded_count} | "
-                        f"generated={generated_count} | "
+                        f"generated_from_custom={generated_from_custom_count} | "
+                        f"generated_ai={generated_ai_count} | "
+                        f"loaded_fallback={loaded_fallback_count} | "
                         f"failed={len(script.characters) - success_count}"
                     )
 
                     await self._update_progress(
                         15,
                         f"Processed references for {success_count}/{len(script.characters)} characters "
-                        f"({loaded_count} custom, {generated_count} AI)"
+                        f"({generated_from_custom_count} from custom, {generated_ai_count} AI-generated)"
                     )
 
                 except Exception as e:

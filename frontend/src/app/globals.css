@@ -2,10 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import custom styles */
+@import '../styles/tabs.css';
+
 /* Apple Design System Variables */
 :root {
   /* Colors - Light Mode */
   --color-primary: #007AFF;
+  --color-primary-alpha: rgba(0, 122, 255, 0.1);
   --color-secondary: #5856D6;
   --color-success: #34C759;
   --color-warning: #FF9500;

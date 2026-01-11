@@ -32,7 +32,6 @@ characters:
     appearance: "德军制服"
 
 scenes:
-  # TODO: Convert all scenes from script.txt to YAML format
   # Follow the structure shown in projects/01_simple_project_day/script.yaml
   # Each scene should have: scene_id, location, time, weather, atmosphere, description,
   # shot_type, camera_movement, duration, visual_style, color_tone, action, 
@@ -93,6 +92,5 @@ scenes:
         dialogues: []
         narrations: []
         sound_effects: []
-  
-  # TODO: Add remaining scenes from script.txt
+
 

@@ -70,6 +70,14 @@ class WorkflowService:
         # Determine mode
         mode = "with_images" if (character_images or scene_images) else "full_pipeline"
         logger.info(f"WorkflowService | Starting workflow | task_id={task_id} | mode={mode}")
+        logger.debug(
+            f"WorkflowService | Workflow input details | "
+            f"task_id={task_id} | "
+            f"script_length={len(script)} | "
+            f"character_images_count={len(character_images) if character_images else 0} | "
+            f"scene_images_count={len(scene_images) if scene_images else 0} | "
+            f"config={config.dict() if config else 'default'}"
+        )
         
         try:
             # Step 1: Create temporary project structure
@@ -91,7 +99,7 @@ class WorkflowService:
             )
             
             # Build character_images config for orchestrator
-            # This tells the character_reference_agent to LOAD the custom images instead of generating
+            # This tells the character_reference_agent to generate modeling sheets based on custom images
             character_images_for_orchestrator = None
             if saved_character_images:
                 character_images_for_orchestrator = {}
@@ -101,20 +109,23 @@ class WorkflowService:
                         'images': [image_path]
                     }
                     logger.info(
-                        f"WorkflowService | Configured custom character image for loading | "
+                        f"WorkflowService | Configured custom character base image | "
                         f"character={char_name} | "
                         f"mode=load | "
-                        f"path={image_path}"
+                        f"base_image={image_path} | "
+                        f"will_generate_modeling_sheet=True"
                     )
                 logger.info(
                     f"WorkflowService | Built character images config for orchestrator | "
-                    f"total={len(character_images_for_orchestrator)} characters"
+                    f"total={len(character_images_for_orchestrator)} characters | "
+                    f"note=will generate modeling sheets from custom base images"
                 )
             else:
-                logger.info("WorkflowService | No custom character images provided, will use AI generation")
+                logger.info("WorkflowService | No custom character images provided, will use AI generation for modeling sheets")
             
             # Step 2: Load project configuration
             logger.info(f"WorkflowService | Loading project configuration | task_id={task_id}")
+            logger.debug(f"WorkflowService | Project path | path={project_path}")
             if progress_callback:
                 await progress_callback(10, "Loading project configuration...")
             

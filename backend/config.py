@@ -2,6 +2,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional, Literal
 from pathlib import Path
+import os
 
 
 class BackendSettings(BaseSettings):
@@ -100,4 +101,8 @@ class BackendSettings(BaseSettings):
 
 # Global settings instance
 settings = BackendSettings()
+
+# Override log_level from environment if set (for uvicorn reload support)
+if os.getenv('LOG_LEVEL'):
+    settings.log_level = os.getenv('LOG_LEVEL')
 

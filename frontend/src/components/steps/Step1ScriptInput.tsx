@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Card, Button, Textarea } from '@/components/ui';
+import React, { useState, useEffect } from 'react';
+import { Card, Button, Textarea, Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { APIException } from '@/lib/types';
 import { getScriptPrompts } from '@/lib/scriptPrompts';
+import { validateYAMLScript, getSampleYAMLScript } from '@/lib/yamlValidator';
 
 interface Step1ScriptInputProps {
   onNext: (userScript: string, polishedScript: string) => void;
@@ -13,31 +14,93 @@ interface Step1ScriptInputProps {
   initialPolishedScript?: string;
 }
 
+type ScriptMode = 'polish' | 'direct';
+
 export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   onNext,
   initialUserScript = '',
   initialPolishedScript = '',
 }) => {
+  // Mode state - check localStorage for saved preference
+  const [mode, setMode] = useState<ScriptMode>(() => {
+    if (typeof window !== 'undefined') {
+      const savedMode = localStorage.getItem('scriptInputMode');
+      return (savedMode === 'direct' || savedMode === 'polish') ? savedMode : 'polish';
+    }
+    return 'polish';
+  });
+
+  // Polish mode state
   const [userScript, setUserScript] = useState(initialUserScript);
   const [polishedScript, setPolishedScript] = useState(initialPolishedScript);
   const [isPolishing, setIsPolishing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
+  // Direct mode state
+  const [directScript, setDirectScript] = useState(initialPolishedScript || '');
+  
+  // Common state
+  const [error, setError] = useState<string | null>(null);
+  const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
+  const [showSample, setShowSample] = useState(false);
+
+  // Save mode preference to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('scriptInputMode', mode);
+      logger.debug('Step1ScriptInput', 'Script input mode changed', { mode });
+    }
+  }, [mode]);
+
+  // Handle mode change with unsaved content warning
+  const handleModeChange = (newMode: string) => {
+    const newModeValue = newMode as ScriptMode;
+    
+    if (mode === 'polish' && userScript.trim() && !polishedScript.trim()) {
+      const confirmed = window.confirm(
+        'You have unpolished script content. Switching modes will keep your work. Continue?'
+      );
+      if (!confirmed) {
+        logger.info('Step1ScriptInput', 'User cancelled mode switch');
+        return;
+      }
+    }
+    
+    if (mode === 'direct' && directScript.trim() && newModeValue === 'polish') {
+      const confirmed = window.confirm(
+        'You have direct script content. Switching to polish mode will preserve it. Continue?'
+      );
+      if (!confirmed) {
+        logger.info('Step1ScriptInput', 'User cancelled mode switch');
+        return;
+      }
+    }
+
+    setMode(newModeValue);
+    setError(null);
+    setValidationWarnings([]);
+    logger.info('Step1ScriptInput', 'Mode switched', { from: mode, to: newModeValue });
+  };
+
+  // Polish mode: Handle polish button click
   const handlePolish = async () => {
     if (!userScript.trim()) {
       setError('Please enter a script description');
+      logger.warn('Step1ScriptInput', 'Polish attempted with empty script');
       return;
     }
 
-    logger.info('Step1ScriptInput', 'User submitted script for polishing');
+    logger.info('Step1ScriptInput', 'User submitted script for polishing', {
+      scriptLength: userScript.length,
+    });
     setIsPolishing(true);
     setError(null);
+    setValidationWarnings([]);
 
     try {
       // Get language-appropriate prompts
       const prompts = getScriptPrompts(userScript);
       
-      logger.debug('Step1ScriptInput', 'Using prompts', {
+      logger.debug('Step1ScriptInput', 'Using prompts for polishing', {
         language: prompts.language,
         systemPromptLength: prompts.systemPrompt.length,
         userMessageLength: prompts.userMessage.length,
@@ -55,7 +118,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
           },
         ],
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: 8192,
       });
 
       const polished = response.choices[0]?.message?.content || '';
@@ -66,21 +129,23 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
         return;
       }
       
-      // Basic validation: check if response is valid YAML with required markers
-      const hasYamlStart = /^title:/m.test(polished) || /^---/m.test(polished);
-      const hasCharacters = /^characters:/m.test(polished);
-      const hasScenes = /^scenes:/m.test(polished);
+      // Validate the polished YAML
+      const validation = validateYAMLScript(polished);
       
-      if (!hasYamlStart || !hasCharacters || !hasScenes) {
-        logger.warn('Step1ScriptInput', 'Generated script missing required YAML sections', {
-          hasYamlStart,
-          hasCharacters,
-          hasScenes,
-          preview: polished.substring(0, 200),
+      if (!validation.isValid) {
+        logger.warn('Step1ScriptInput', 'Generated script validation failed', {
+          errors: validation.errors,
+          warnings: validation.warnings,
         });
         setError(
-          'Generated script may not be in the correct YAML format. Please review and edit if needed, or try again.'
+          `Generated script has validation errors: ${validation.errors.join(', ')}. Please review and edit.`
         );
+        setValidationWarnings(validation.warnings);
+      } else if (validation.warnings.length > 0) {
+        logger.info('Step1ScriptInput', 'Generated script has warnings', {
+          warnings: validation.warnings,
+        });
+        setValidationWarnings(validation.warnings);
       }
       
       setPolishedScript(polished);
@@ -88,9 +153,8 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
         originalLength: userScript.length,
         polishedLength: polished.length,
         language: prompts.language,
-        hasYamlStart,
-        hasCharacters,
-        hasScenes,
+        isValid: validation.isValid,
+        warningCount: validation.warnings.length,
       });
     } catch (err) {
       logger.error('Step1ScriptInput', 'Failed to polish script', err);
@@ -105,56 +169,203 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
     }
   };
 
+  // Direct mode: Handle script validation
+  const handleDirectScriptChange = (value: string) => {
+    setDirectScript(value);
+    setError(null);
+    setValidationWarnings([]);
+
+    if (value.trim()) {
+      // Debounced validation (validate after user stops typing)
+      const timeoutId = setTimeout(() => {
+        const validation = validateYAMLScript(value);
+        
+        logger.debug('Step1ScriptInput', 'Direct script validation', {
+          isValid: validation.isValid,
+          errorCount: validation.errors.length,
+          warningCount: validation.warnings.length,
+        });
+
+        if (!validation.isValid) {
+          setError(validation.errors.join('; '));
+        }
+        
+        if (validation.warnings.length > 0) {
+          setValidationWarnings(validation.warnings);
+        }
+      }, 500);
+
+      return () => clearTimeout(timeoutId);
+    }
+  };
+
+  // Load sample script
+  const handleLoadSample = () => {
+    const sample = getSampleYAMLScript();
+    setDirectScript(sample);
+    setError(null);
+    setValidationWarnings([]);
+    setShowSample(false);
+    logger.info('Step1ScriptInput', 'Sample script loaded');
+  };
+
+  // Handle next button
   const handleNext = () => {
-    if (!polishedScript.trim()) {
-      setError('Please polish the script first or enter a polished version manually');
+    const finalScript = mode === 'polish' ? polishedScript : directScript;
+
+    if (!finalScript.trim()) {
+      setError(
+        mode === 'polish'
+          ? 'Please polish the script first or switch to Direct Input mode'
+          : 'Please enter a script in YAML format'
+      );
+      logger.warn('Step1ScriptInput', 'Next attempted with empty script', { mode });
       return;
     }
 
-    logger.info('Step1ScriptInput', 'User proceeding to next step');
-    onNext(userScript, polishedScript);
+    // Final validation
+    const validation = validateYAMLScript(finalScript);
+    if (!validation.isValid) {
+      setError(`Script validation failed: ${validation.errors.join('; ')}`);
+      logger.error('Step1ScriptInput', 'Final validation failed', {
+        mode,
+        errors: validation.errors,
+      });
+      return;
+    }
+
+    logger.info('Step1ScriptInput', 'User proceeding to next step', {
+      mode,
+      scriptLength: finalScript.length,
+      hasWarnings: validation.warnings.length > 0,
+    });
+
+    onNext(mode === 'polish' ? userScript : '', finalScript);
   };
+
+  const finalScript = mode === 'polish' ? polishedScript : directScript;
 
   return (
     <div className="space-y-6">
-      {/* User Input Section */}
-      <Card title="Enter Your Script Description">
-        <Textarea
-          label="Script Description"
-          placeholder="Enter your script idea here... For example: A programmer's day - Starting in the morning at the office, working on code, having lunch with colleagues, and finally finishing a project in the evening."
-          value={userScript}
-          onChange={(e) => setUserScript(e.target.value)}
-          rows={8}
-          helperText="Provide a brief description or outline of your video script. The AI will convert it into a structured YAML format."
-        />
-        <div className="mt-4">
-          <Button
-            onClick={handlePolish}
-            loading={isPolishing}
-            disabled={!userScript.trim() || isPolishing}
-          >
-            {isPolishing ? 'Polishing Script...' : 'Polish Script'}
-          </Button>
-        </div>
+      {/* Mode Selection Tabs */}
+      <Card title="Generate Script" subtitle="Choose how you want to create your video script">
+        <Tabs value={mode} onValueChange={handleModeChange}>
+          <TabsList>
+            <TabsTrigger value="polish">
+              Polish Script
+            </TabsTrigger>
+            <TabsTrigger value="direct">
+              Direct YAML Input
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Polish Mode Tab */}
+          <TabsContent value="polish">
+            <div className="space-y-4">
+              <Textarea
+                label="Script Description"
+                placeholder="Enter your script idea here... For example: A programmer's day - Starting in the morning at the office, working on code, having lunch with colleagues, and finally finishing a project in the evening."
+                value={userScript}
+                onChange={(e) => setUserScript(e.target.value)}
+                rows={8}
+                helperText="Provide a brief description or outline of your video script. The AI will convert it into a structured YAML format."
+              />
+              <div>
+                <Button
+                  onClick={handlePolish}
+                  loading={isPolishing}
+                  disabled={!userScript.trim() || isPolishing}
+                >
+                  {isPolishing ? 'Polishing Script...' : 'Polish Script with AI'}
+                </Button>
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Direct Input Mode Tab */}
+          <TabsContent value="direct">
+            <div className="space-y-4">
+              <Textarea
+                label="YAML Script"
+                placeholder="Paste your pre-written YAML script here, or load a sample..."
+                value={directScript}
+                onChange={(e) => handleDirectScriptChange(e.target.value)}
+                rows={16}
+                helperText="Enter a complete YAML script with title, characters, and scenes. Must follow the required format."
+              />
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowSample(!showSample)}
+                >
+                  {showSample ? 'Hide Sample' : 'Show Sample Format'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleLoadSample}
+                >
+                  Load Sample Script
+                </Button>
+              </div>
+
+              {/* Sample Format Display */}
+              {showSample && (
+                <div className="mt-4 p-4 bg-surface rounded-apple-md border border-apple-gray-light">
+                  <h4 className="text-apple-headline mb-2 text-text-primary">
+                    Sample YAML Format:
+                  </h4>
+                  <pre className="text-apple-caption text-text-secondary overflow-x-auto">
+                    <code>{getSampleYAMLScript()}</code>
+                  </pre>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
       </Card>
 
-      {/* Polished Script Section */}
-      {polishedScript && (
-        <Card title="Polished Script (YAML Format)" subtitle="You can edit this YAML script before proceeding">
+      {/* Polished/Editable Script Section */}
+      {finalScript && (
+        <Card 
+          title={mode === 'polish' ? 'Polished Script (Editable)' : 'Script Preview'} 
+          subtitle="You can edit the script before proceeding"
+        >
           <Textarea
-            label="Polished Script (YAML)"
-            value={polishedScript}
-            onChange={(e) => setPolishedScript(e.target.value)}
+            label={mode === 'polish' ? 'Polished Script (YAML)' : 'Final Script'}
+            value={finalScript}
+            onChange={(e) => {
+              if (mode === 'polish') {
+                setPolishedScript(e.target.value);
+              } else {
+                handleDirectScriptChange(e.target.value);
+              }
+            }}
             rows={12}
             helperText="Edit the YAML script as needed. Ensure proper YAML syntax (indentation, quotes, etc.)."
           />
         </Card>
       )}
 
+      {/* Validation Warnings */}
+      {validationWarnings.length > 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-400 rounded-apple-md p-4">
+          <h4 className="text-sm font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+            ⚠️ Warnings:
+          </h4>
+          <ul className="text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside space-y-1">
+            {validationWarnings.map((warning, idx) => (
+              <li key={idx}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-apple-red rounded-apple-md p-4">
-          <p className="text-apple-red text-sm">{error}</p>
+          <p className="text-apple-red text-sm font-medium">❌ {error}</p>
         </div>
       )}
 
@@ -162,7 +373,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       <div className="flex justify-end">
         <Button
           onClick={handleNext}
-          disabled={!polishedScript.trim()}
+          disabled={!finalScript.trim()}
           size="lg"
         >
           Next: Character Images →
@@ -173,4 +384,3 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
 };
 
 export default Step1ScriptInput;
-

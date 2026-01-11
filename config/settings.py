@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignore extra fields from backend .env
 
 
 # 全局配置实例

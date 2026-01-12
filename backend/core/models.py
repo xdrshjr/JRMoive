@@ -270,3 +270,60 @@ class WorkflowStatusResponse(BaseModel):
     created_at: datetime = Field(..., description="Task creation time")
     updated_at: datetime = Field(..., description="Last update time")
     completed_at: Optional[datetime] = Field(None, description="Completion time")
+
+
+# ==================== Quick Mode Models ====================
+
+class QuickModeSceneConfig(BaseModel):
+    """Configuration for a single scene in quick mode"""
+    scene_id: str = Field(..., description="Scene identifier (scene_001, scene_002, etc.)")
+    image: str = Field(..., description="Base64 encoded image or URL")
+    duration: int = Field(..., ge=1, le=10, description="Video duration in seconds")
+    prompt: Optional[str] = Field(None, description="Optional prompt for video generation")
+    camera_motion: Optional[Literal["static", "pan", "tilt", "zoom"]] = Field(
+        None,
+        description="Camera motion type"
+    )
+    motion_strength: Optional[float] = Field(None, ge=0.0, le=1.0, description="Motion strength parameter")
+
+    @validator('scene_id')
+    def validate_scene_id_format(cls, v):
+        """Validate scene ID follows scene_XXX format"""
+        import re
+        if not re.match(r'^scene_\d{3}$', v):
+            raise ValueError("Scene ID must follow format 'scene_XXX' where XXX is a 3-digit number (e.g., scene_001)")
+        return v
+
+
+class QuickModeWorkflowRequest(BaseModel):
+    """Request for quick mode workflow - bypasses script parsing and image generation"""
+    mode: Literal["quick"] = "quick"
+    scenes: List[QuickModeSceneConfig] = Field(
+        ...,
+        min_items=1,
+        max_items=50,
+        description="List of scene configurations with images"
+    )
+    config: Optional[WorkflowConfig] = Field(None, description="Workflow configuration (optional)")
+
+    @validator('scenes')
+    def validate_scene_sequence(cls, v):
+        """Validate scenes are in sequential order without gaps"""
+        scene_numbers = []
+        for scene in v:
+            # Extract number from scene_XXX
+            num = int(scene.scene_id.split('_')[1])
+            scene_numbers.append(num)
+
+        # Check for sequential order
+        scene_numbers_sorted = sorted(scene_numbers)
+        expected = list(range(1, len(scene_numbers) + 1))
+
+        if scene_numbers_sorted != expected:
+            raise ValueError(
+                f"Scene IDs must be sequential starting from scene_001. "
+                f"Expected: {expected}, Got: {scene_numbers_sorted}"
+            )
+
+        return v
+

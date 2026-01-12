@@ -3,7 +3,7 @@ Drama Generation Orchestrator - 主控Agent协调器
 """
 
 import asyncio
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 from pathlib import Path
 from agents.base_agent import BaseAgent
 from agents.script_parser_agent import ScriptParserAgent
@@ -345,6 +345,189 @@ class DramaGenerationOrchestrator(BaseAgent):
 
             await self.on_error(e)
             raise
+
+    async def execute_quick_mode(
+        self,
+        scenes_config: List[Any],
+        scene_image_paths: Dict[str, str],
+        scene_params: Dict[str, Dict[str, Any]],
+        output_filename: str = "quick_mode.mp4",
+        progress_callback: Optional[Callable] = None
+    ) -> str:
+        """
+        Execute quick mode workflow - bypass script parsing and image generation
+
+        Args:
+            scenes_config: List of Scene objects (minimal)
+            scene_image_paths: Dict mapping scene_id to image file path
+            scene_params: Dict mapping scene_id to parameters (duration, prompt, camera_motion, motion_strength)
+            output_filename: Output video filename
+            progress_callback: Progress callback function
+
+        Returns:
+            Final video file path
+        """
+        self.progress_callback = progress_callback
+        self.start_time = datetime.now()
+        self.current_task_id = f"quick_{self.start_time.strftime('%Y%m%d_%H%M%S')}"
+
+        self.logger.info(
+            f"Orchestrator | Starting quick mode | "
+            f"task_id={self.current_task_id} | "
+            f"scene_count={len(scenes_config)}"
+        )
+
+        # Start global progress bar if enabled
+        if self.config.get('enable_global_progress_bar', False):
+            from utils.global_progress_display import get_global_progress_display
+            progress_display = get_global_progress_display()
+            progress_display.start()
+
+        try:
+            # Step 1: Prepare image results (0% -> 10%)
+            await self._update_progress(0, "Starting quick mode generation...")
+            await self._update_progress(5, "Preparing scene images...")
+
+            image_results = []
+            for scene in scenes_config:
+                scene_id = scene.scene_id
+                image_path = scene_image_paths.get(scene_id)
+
+                if not image_path:
+                    raise ValueError(f"Missing image path for scene: {scene_id}")
+
+                image_results.append({
+                    'scene_id': scene_id,
+                    'image_path': image_path,
+                    'success': True,
+                    'from_quick_mode': True
+                })
+
+            await self._update_progress(
+                10,
+                f"Prepared {len(image_results)} scene images"
+            )
+
+            # Step 2: Generate videos (10% -> 70%)
+            await self._update_progress(10, "Generating videos from images...")
+
+            video_results = await self.video_generator.execute(
+                image_results,
+                scenes_config,
+                character_dict={},  # No characters in quick mode
+                progress_callback=self._create_sub_progress_callback(10, 70),
+                scene_params=scene_params  # Pass scene parameters
+            )
+
+            # Check for failures
+            failed_scenes = [r for r in video_results if not r.get('success', False)]
+            success_scenes = [r for r in video_results if r.get('success', False)]
+
+            if failed_scenes:
+                failed_ids = ', '.join([r.get('scene_id', 'unknown') for r in failed_scenes])
+                error_message = f"Video generation completed with errors: {len(success_scenes)} succeeded, {len(failed_scenes)} failed (scenes: {failed_ids})"
+                self.logger.warning(error_message)
+                await self._update_progress(70, error_message)
+
+                if len(success_scenes) == 0:
+                    raise Exception("All video scenes failed to generate")
+            else:
+                await self._update_progress(
+                    70,
+                    f"Generated {len(video_results)} video clips successfully"
+                )
+
+            # Step 3: Compose final video (70% -> 95%)
+            await self._update_progress(70, "Composing final video...")
+
+            final_video_path = await self.video_composer.execute(
+                video_results,
+                output_filename=output_filename,
+                bgm_path=self.config.get('bgm_path'),
+                add_subtitles=False  # No subtitles in quick mode
+            )
+
+            await self._update_progress(95, "Saving metadata...")
+
+            # Step 4: Save metadata (95% -> 100%)
+            await self._save_quick_mode_metadata(
+                scenes_config,
+                scene_params,
+                final_video_path
+            )
+
+            await self._update_progress(100, "Quick mode generation completed!")
+
+            # Calculate elapsed time
+            elapsed_time = (datetime.now() - self.start_time).total_seconds()
+            self.logger.info(
+                f"Orchestrator | Quick mode completed | "
+                f"task_id={self.current_task_id} | "
+                f"duration={elapsed_time:.2f}s"
+            )
+
+            # Finish global progress bar if enabled
+            if self.config.get('enable_global_progress_bar', False):
+                from utils.global_progress_display import get_global_progress_display
+                progress_display = get_global_progress_display()
+                progress_display.finish()
+
+            await self.on_complete(final_video_path)
+            return final_video_path
+
+        except Exception as e:
+            self.logger.error(f"Quick mode generation failed: {e}")
+
+            # Finish global progress bar if enabled
+            if self.config.get('enable_global_progress_bar', False):
+                from utils.global_progress_display import get_global_progress_display
+                progress_display = get_global_progress_display()
+                progress_display.finish()
+
+            await self.on_error(e)
+            raise
+
+    async def _save_quick_mode_metadata(
+        self,
+        scenes: List[Any],
+        scene_params: Dict[str, Dict[str, Any]],
+        video_path: str
+    ):
+        """
+        Save quick mode generation metadata
+
+        Args:
+            scenes: List of Scene objects
+            scene_params: Scene parameters dict
+            video_path: Video file path
+        """
+        try:
+            metadata = {
+                'task_id': self.current_task_id,
+                'mode': 'quick',
+                'generated_at': datetime.now().isoformat(),
+                'scene_info': {
+                    'total_scenes': len(scenes),
+                    'scene_params': scene_params
+                },
+                'output': {
+                    'video_path': video_path,
+                    'filename': Path(video_path).name
+                },
+                'config': self.config,
+                'generation_time': (datetime.now() - self.start_time).total_seconds()
+            }
+
+            # Save metadata
+            metadata_path = Path(video_path).with_suffix('.json')
+
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            self.logger.info(f"Quick mode metadata saved: {metadata_path}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save quick mode metadata: {e}")
 
     async def validate_input(self, script_text: str) -> bool:
         """验证输入剧本"""

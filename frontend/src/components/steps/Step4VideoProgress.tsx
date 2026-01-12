@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Card, Button, ProgressBar, LogViewer, LoadingAnimation } from '@/components/ui';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
-import { Scene, Character, LogEntry, TaskStatusResponse, APIException } from '@/lib/types';
+import { Scene, Character, LogEntry, TaskStatusResponse, APIException, QuickModeScene } from '@/lib/types';
 
 interface Step4VideoProgressProps {
   polishedScript: string;
@@ -12,6 +12,8 @@ interface Step4VideoProgressProps {
   scenes: Scene[];
   onComplete: (videoUrl: string, metadata: any) => void;
   onCancel: () => void;
+  quickModeScenes?: QuickModeScene[];
+  isQuickMode?: boolean;
 }
 
 export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
@@ -20,6 +22,8 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   scenes,
   onComplete,
   onCancel,
+  quickModeScenes = [],
+  isQuickMode = false,
 }) => {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
@@ -48,9 +52,62 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
     // Use ref to prevent double execution in React 18 StrictMode
     if (!hasStartedRef.current) {
       hasStartedRef.current = true;
-      startWorkflowGeneration();
+      if (isQuickMode) {
+        startQuickModeGeneration();
+      } else {
+        startWorkflowGeneration();
+      }
     }
   }, []); // Empty dependency array - only run on mount
+
+  const startQuickModeGeneration = async () => {
+    addLog('info', 'QuickModeGeneration', 'Starting quick mode video generation');
+
+    try {
+      // Prepare scenes for API
+      const apiScenes = quickModeScenes.map((scene) => ({
+        scene_id: scene.id,
+        image: scene.imageBase64,
+        duration: scene.duration,
+        prompt: scene.prompt || undefined,
+        camera_motion: scene.cameraMotion || undefined,
+        motion_strength: scene.motionStrength,
+      }));
+
+      addLog('info', 'QuickModeGeneration',
+        `Submitting ${apiScenes.length} scenes for video generation`
+      );
+      setCurrentStage('Submitting Quick Mode Workflow');
+
+      // Call quick mode API
+      const response = await apiClient.startQuickModeWorkflow({
+        mode: 'quick',
+        scenes: apiScenes,
+        config: {
+          video_fps: 30,
+          video_resolution: '1920x1080',
+          add_transitions: true,
+        },
+      });
+
+      setTaskId(response.task_id);
+      addLog('info', 'QuickModeGeneration', `Quick mode task submitted successfully, task_id: ${response.task_id}`);
+
+      // Start polling
+      pollTaskStatus(response.task_id, true);
+    } catch (err) {
+      addLog('error', 'QuickModeGeneration', 'Failed to start quick mode generation', err);
+
+      if (err instanceof APIException) {
+        setError(`Failed to start quick mode: ${err.message}`);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred');
+      }
+      setStatus('failed');
+    }
+  };
 
   const startWorkflowGeneration = async () => {
     addLog('info', 'WorkflowGeneration', 'Starting full workflow generation pipeline');
@@ -109,7 +166,7 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       addLog('info', 'WorkflowGeneration', `Workflow task submitted successfully, task_id: ${response.task_id}`);
 
       // Start polling
-      pollTaskStatus(response.task_id);
+      pollTaskStatus(response.task_id, false);
     } catch (err) {
       addLog('error', 'WorkflowGeneration', 'Failed to start workflow generation', err);
       
@@ -124,29 +181,43 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
     }
   };
 
-  const pollTaskStatus = async (taskId: string) => {
+  const pollTaskStatus = async (taskId: string, isQuickMode: boolean = false) => {
     try {
       await apiClient.pollTaskUntilComplete(
         taskId,
         (statusUpdate: TaskStatusResponse) => {
           setProgress(statusUpdate.progress);
           setStatus(statusUpdate.status);
-          
-          // Update stage based on progress and message
-          if (statusUpdate.progress < 10) {
-            setCurrentStage('Initializing Project');
-          } else if (statusUpdate.progress < 20) {
-            setCurrentStage('Parsing Script');
-          } else if (statusUpdate.progress < 40) {
-            setCurrentStage('Processing Character References');
-          } else if (statusUpdate.progress < 60) {
-            setCurrentStage('Generating Scene Images');
-          } else if (statusUpdate.progress < 85) {
-            setCurrentStage('Generating Scene Videos');
-          } else if (statusUpdate.progress < 98) {
-            setCurrentStage('Composing Final Video');
+
+          // Update stage based on progress and mode
+          if (isQuickMode) {
+            // Quick mode stages
+            if (statusUpdate.progress < 10) {
+              setCurrentStage('Preparing Images');
+            } else if (statusUpdate.progress < 70) {
+              setCurrentStage('Generating Videos from Images');
+            } else if (statusUpdate.progress < 95) {
+              setCurrentStage('Composing Final Video');
+            } else {
+              setCurrentStage('Finalizing');
+            }
           } else {
-            setCurrentStage('Finalizing');
+            // Full mode stages
+            if (statusUpdate.progress < 10) {
+              setCurrentStage('Initializing Project');
+            } else if (statusUpdate.progress < 20) {
+              setCurrentStage('Parsing Script');
+            } else if (statusUpdate.progress < 40) {
+              setCurrentStage('Processing Character References');
+            } else if (statusUpdate.progress < 60) {
+              setCurrentStage('Generating Scene Images');
+            } else if (statusUpdate.progress < 85) {
+              setCurrentStage('Generating Scene Videos');
+            } else if (statusUpdate.progress < 98) {
+              setCurrentStage('Composing Final Video');
+            } else {
+              setCurrentStage('Finalizing');
+            }
           }
 
           addLog(

@@ -10,9 +10,11 @@ import os
 from backend.core.models import (
     WorkflowGenerationRequest,
     WorkflowGenerationResponse,
-    TaskStatus
+    TaskStatus,
+    QuickModeWorkflowRequest
 )
 from backend.core.workflow_service import get_workflow_service
+from backend.core.quick_mode_service import get_quick_mode_service
 from backend.utils.asset_manager import get_asset_manager
 from backend.core.task_manager import get_task_manager
 from backend.core.exceptions import TaskNotFoundException
@@ -146,6 +148,127 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit workflow task: {str(e)}"
+        )
+
+
+@router.post("/quick-generate", response_model=WorkflowGenerationResponse, summary="Quick Mode Video Generation")
+async def generate_quick_workflow(request: QuickModeWorkflowRequest, http_request: Request):
+    """
+    Generate video from pre-uploaded scene images (Quick Mode).
+
+    This endpoint bypasses script parsing and image generation, directly generating
+    videos from user-provided images with per-scene configuration.
+
+    **Quick Mode Workflow:**
+    1. User uploads images (scene_001.png, scene_002.png, etc.)
+    2. User configures per-scene parameters (duration, prompt, camera motion)
+    3. System generates videos directly from images
+    4. System composes final video with transitions
+
+    **Request Format:**
+    ```json
+    {
+      "mode": "quick",
+      "scenes": [
+        {
+          "scene_id": "scene_001",
+          "image": "base64_encoded_image_or_url",
+          "duration": 5,
+          "prompt": "Camera slowly pans across the scene",
+          "camera_motion": "pan",
+          "motion_strength": 0.7
+        },
+        {
+          "scene_id": "scene_002",
+          "image": "base64_encoded_image_or_url",
+          "duration": 7,
+          "prompt": "Static shot with subtle movement",
+          "camera_motion": "static",
+          "motion_strength": 0.3
+        }
+      ],
+      "config": {
+        "video_fps": 30,
+        "add_transitions": true
+      }
+    }
+    ```
+
+    **Returns:**
+    - Task ID for polling status
+    - Initial task status
+
+    **Workflow:**
+    1. Submit quick mode request → Get task_id
+    2. Poll `/api/v1/tasks/{task_id}` for status and progress
+    3. When status="completed", get video_url and assets from result
+    4. Access assets via `/api/v1/workflow/assets/{task_id}/{asset_type}/{filename}`
+    """
+    logger.info(
+        f"WorkflowAPI | Quick mode request | "
+        f"scene_count={len(request.scenes)}"
+    )
+
+    try:
+        # Get base URL from request
+        base_url = str(http_request.base_url).rstrip('/')
+
+        # Get task manager
+        task_manager = get_task_manager()
+
+        # Task ID holder
+        workflow_task_id = None
+
+        # Define quick mode workflow task
+        async def quick_workflow_task():
+            nonlocal workflow_task_id
+
+            # Create progress callback
+            async def progress_callback(progress: float, message: str = ""):
+                if workflow_task_id:
+                    try:
+                        await task_manager._update_task_status(
+                            workflow_task_id,
+                            TaskStatus.PROCESSING,
+                            progress=int(progress),
+                            message=message
+                        )
+                    except Exception as e:
+                        logger.warning(f"WorkflowAPI | Failed to update progress | task_id={workflow_task_id} | error={e}")
+
+            # Execute quick mode workflow
+            quick_mode_service = get_quick_mode_service()
+            result = await quick_mode_service.execute_quick_workflow(
+                task_id=workflow_task_id,
+                scenes_config=request.scenes,
+                config=request.config,
+                progress_callback=progress_callback,
+                base_url=base_url
+            )
+            return result.dict()
+
+        # Submit task
+        task_id = await task_manager.submit_task(
+            quick_workflow_task,
+            task_type="quick_workflow"
+        )
+
+        # Set task_id for closure
+        workflow_task_id = task_id
+
+        logger.info(f"WorkflowAPI | Quick mode task submitted | task_id={task_id} | scene_count={len(request.scenes)}")
+
+        return WorkflowGenerationResponse(
+            task_id=task_id,
+            status=TaskStatus.PENDING,
+            message=f"Quick mode workflow task submitted ({len(request.scenes)} scenes). Poll /api/v1/tasks/{task_id} for status."
+        )
+
+    except Exception as e:
+        logger.exception(f"WorkflowAPI | Failed to submit quick mode task | error={e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit quick mode task: {str(e)}"
         )
 
 

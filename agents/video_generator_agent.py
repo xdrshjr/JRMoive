@@ -1,6 +1,6 @@
 """Video generation agent"""
 import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
 from datetime import datetime
 
@@ -73,7 +73,9 @@ class VideoGenerationAgent(BaseAgent):
         self,
         image_results: List[Dict[str, Any]],
         scenes: List[Scene],
-        character_dict: Optional[Dict[str, Any]] = None
+        character_dict: Optional[Dict[str, Any]] = None,
+        progress_callback: Optional[Callable] = None,
+        scene_params: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         """
         执行批量视频生成
@@ -82,6 +84,8 @@ class VideoGenerationAgent(BaseAgent):
             image_results: 图片生成结果列表
             scenes: 对应的场景列表
             character_dict: 可选的角色字典，用于生成视频提示词
+            progress_callback: 可选的进度回调函数
+            scene_params: 可选的场景参数字典，格式为 {scene_id: {duration, prompt, camera_motion, motion_strength}}
 
         Returns:
             视频生成结果列表
@@ -90,6 +94,9 @@ class VideoGenerationAgent(BaseAgent):
             raise ValueError("Invalid input data")
 
         self.logger.info(f"Starting video generation for {len(image_results)} clips")
+
+        # Store scene_params for use in generation
+        self.scene_params = scene_params or {}
 
         try:
             # 构建任务列表
@@ -107,11 +114,11 @@ class VideoGenerationAgent(BaseAgent):
                 tasks_data,
                 show_progress=True
             )
-            
+
             # 统计成功和失败的场景
             success_count = sum(1 for r in results if r.get('success', False))
             failed_count = len(results) - success_count
-            
+
             if failed_count > 0:
                 failed_scenes = [r.get('scene_id', 'unknown') for r in results if not r.get('success', False)]
                 self.logger.warning(
@@ -632,8 +639,29 @@ class VideoGenerationAgent(BaseAgent):
             'prompt': optimized_video_prompt  # 使用优化后的提示词
         }
 
+        # Check if scene_params are provided (for quick mode)
+        if hasattr(self, 'scene_params') and scene_id in self.scene_params:
+            params = self.scene_params[scene_id]
+
+            # Override with custom parameters if provided
+            if params.get('duration') is not None:
+                video_config['duration'] = params['duration']
+            if params.get('prompt'):
+                # Use custom prompt instead of generated one
+                video_config['prompt'] = params['prompt']
+            if params.get('camera_motion'):
+                video_config['camera_motion'] = params['camera_motion']
+            if params.get('motion_strength') is not None:
+                video_config['motion_strength'] = params['motion_strength']
+
+            self.logger.info(
+                f"Using custom scene params for {scene_id}: "
+                f"duration={params.get('duration')}, "
+                f"camera_motion={params.get('camera_motion')}, "
+                f"motion_strength={params.get('motion_strength')}"
+            )
         # 只在scene指定了duration时才添加该参数，否则让视频模型自己决定时长
-        if scene.duration is not None:
+        elif scene.duration is not None:
             video_config['duration'] = scene.duration
 
         # 调用Veo3 API生成视频

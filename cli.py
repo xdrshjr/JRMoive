@@ -338,6 +338,149 @@ def cmd_list(args):
         return 1
 
 
+def cmd_generate_quick(args):
+    """Generate video from pre-uploaded images (Quick Mode)"""
+    setup_logging(args.log_level)
+
+    try:
+        # Validate images directory
+        images_dir = Path(args.images_dir)
+        if not images_dir.exists():
+            print_error(f"Images directory not found: {images_dir}")
+            return 1
+
+        if not images_dir.is_dir():
+            print_error(f"Path is not a directory: {images_dir}")
+            return 1
+
+        # Find all scene images
+        print_info(f"Scanning for scene images in: {images_dir}")
+        scene_images = sorted(images_dir.glob("scene_*.png")) + sorted(images_dir.glob("scene_*.jpg"))
+
+        if not scene_images:
+            print_error("No scene images found. Images must be named scene_001.png, scene_002.png, etc.")
+            return 1
+
+        print_success(f"Found {len(scene_images)} scene images")
+
+        # Validate sequential naming
+        scene_numbers = []
+        for img_path in scene_images:
+            # Extract number from scene_XXX.ext
+            import re
+            match = re.match(r'scene_(\d{3})\.(png|jpg)', img_path.name)
+            if not match:
+                print_error(f"Invalid image name format: {img_path.name}")
+                print_info("Images must be named scene_001.png, scene_002.png, etc.")
+                return 1
+            scene_numbers.append(int(match.group(1)))
+
+        # Check for sequential order
+        expected = list(range(1, len(scene_numbers) + 1))
+        if sorted(scene_numbers) != expected:
+            print_error(f"Scene numbers must be sequential starting from 001")
+            print_error(f"Expected: {expected}, Found: {sorted(scene_numbers)}")
+            return 1
+
+        # Build scene configurations
+        from models.script_models import Scene
+
+        scenes = []
+        scene_image_paths = {}
+        scene_params = {}
+
+        for img_path in scene_images:
+            scene_id = img_path.stem  # e.g., "scene_001"
+
+            # Create minimal Scene object
+            scene = Scene(
+                scene_id=scene_id,
+                location="Quick Mode Scene",
+                time="day",
+                description=f"Scene from {img_path.name}",
+                characters=[],
+                dialogues=[],
+                duration=args.duration
+            )
+            scenes.append(scene)
+
+            # Store image path
+            scene_image_paths[scene_id] = str(img_path.absolute())
+
+            # Store scene parameters
+            scene_params[scene_id] = {
+                'duration': args.duration,
+                'prompt': args.prompt if args.prompt else None,
+                'camera_motion': args.camera_motion if args.camera_motion else None,
+                'motion_strength': args.motion_strength
+            }
+
+        print_success(f"Prepared {len(scenes)} scenes for video generation")
+
+        # Create output directory
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize orchestrator
+        from agents.orchestrator_agent import DramaGenerationOrchestrator
+
+        orchestrator_config = {
+            'video': {
+                'service': 'veo3',
+                'max_concurrent': 2,
+                'fps': args.fps,
+                'resolution': f"{args.width}x{args.height}",
+                'motion_strength': args.motion_strength,
+            },
+            'composer': {
+                'add_transitions': args.transitions,
+                'transition_duration': 0.5,
+                'fps': args.fps,
+            },
+            'enable_character_references': False,
+        }
+
+        orchestrator = DramaGenerationOrchestrator(
+            agent_id="quick_cli_orchestrator",
+            config=orchestrator_config,
+            output_dir=output_dir
+        )
+
+        # Progress callback
+        def progress_callback(progress: float, message: str = ""):
+            bar_length = 40
+            filled = int(bar_length * progress / 100)
+            bar = '█' * filled + '░' * (bar_length - filled)
+            print(f"\r[{bar}] {progress:.0f}% - {message}", end='', flush=True)
+
+        # Run quick mode generation
+        print_info("Starting quick mode video generation...")
+        print()
+
+        video_path = asyncio.run(orchestrator.execute_quick_mode(
+            scenes_config=scenes,
+            scene_image_paths=scene_image_paths,
+            scene_params=scene_params,
+            output_filename=args.output,
+            progress_callback=progress_callback
+        ))
+
+        print()  # New line after progress bar
+        print_success(f"Video generated: {video_path}")
+
+        # Show metadata if available
+        metadata_path = Path(video_path).with_suffix('.json')
+        if metadata_path.exists():
+            print_success(f"Metadata saved: {metadata_path}")
+
+        return 0
+
+    except Exception as e:
+        print_error(f"Quick mode generation failed: {e}")
+        logging.exception("Full traceback:")
+        return 1
+
+
 # ==================== Main ====================
 
 def main():
@@ -358,6 +501,12 @@ Examples:
 
   # Override configuration
   python cli.py generate projects/my_drama --override video.fps=60
+
+  # Quick mode: Generate from images
+  python cli.py quick-generate ./my_images --duration 7 --transitions
+
+  # Quick mode with custom prompt
+  python cli.py quick-generate ./my_images --prompt "Cinematic camera movement" --camera-motion pan
 
   # Validate project
   python cli.py validate projects/my_drama
@@ -408,6 +557,76 @@ Examples:
     # List command
     list_parser = subparsers.add_parser('list', help='List all projects')
     list_parser.set_defaults(func=cmd_list)
+
+    # Quick generate command
+    quick_parser = subparsers.add_parser(
+        'quick-generate',
+        help='Generate video from images (Quick Mode)'
+    )
+    quick_parser.add_argument('images_dir', help='Directory containing scene images (scene_001.png, scene_002.png, etc.)')
+    quick_parser.add_argument(
+        '--output',
+        default='quick_mode.mp4',
+        help='Output video filename (default: quick_mode.mp4)'
+    )
+    quick_parser.add_argument(
+        '--output-dir',
+        default='./output_quick',
+        help='Output directory (default: ./output_quick)'
+    )
+    quick_parser.add_argument(
+        '--duration',
+        type=int,
+        default=5,
+        choices=range(1, 11),
+        metavar='1-10',
+        help='Default duration per scene in seconds (default: 5)'
+    )
+    quick_parser.add_argument(
+        '--prompt',
+        help='Optional prompt to apply to all scenes'
+    )
+    quick_parser.add_argument(
+        '--camera-motion',
+        choices=['static', 'pan', 'tilt', 'zoom'],
+        help='Camera motion type (default: none)'
+    )
+    quick_parser.add_argument(
+        '--motion-strength',
+        type=float,
+        default=0.6,
+        help='Motion strength 0.0-1.0 (default: 0.6)'
+    )
+    quick_parser.add_argument(
+        '--fps',
+        type=int,
+        default=30,
+        help='Video FPS (default: 30)'
+    )
+    quick_parser.add_argument(
+        '--width',
+        type=int,
+        default=1920,
+        help='Video width (default: 1920)'
+    )
+    quick_parser.add_argument(
+        '--height',
+        type=int,
+        default=1080,
+        help='Video height (default: 1080)'
+    )
+    quick_parser.add_argument(
+        '--transitions',
+        action='store_true',
+        help='Add transitions between scenes'
+    )
+    quick_parser.add_argument(
+        '--log-level',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        default='INFO',
+        help='Logging level'
+    )
+    quick_parser.set_defaults(func=cmd_generate_quick)
 
     # Parse arguments
     args = parser.parse_args()

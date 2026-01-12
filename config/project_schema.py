@@ -167,6 +167,14 @@ class LoggingConfig(BaseModel):
     file: str = Field("outputs/generation.log", description="Log file path (relative to project folder)")
 
 
+class QuickModeConfig(BaseModel):
+    """Quick mode specific configuration"""
+    default_duration: int = Field(5, ge=1, le=10, description="Default scene duration in seconds")
+    default_motion_strength: float = Field(0.6, ge=0.0, le=1.0, description="Default motion strength")
+    allow_custom_prompts: bool = Field(True, description="Allow per-scene custom prompts")
+    max_scenes: int = Field(50, ge=1, le=100, description="Maximum number of scenes allowed")
+
+
 class APIKeysConfig(BaseModel):
     """API keys configuration"""
     # Image generation services
@@ -197,6 +205,7 @@ class ProjectConfig(BaseModel):
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig, description="Performance configuration")
     logging: LoggingConfig = Field(default_factory=LoggingConfig, description="Logging configuration")
     api_keys: APIKeysConfig = Field(default_factory=APIKeysConfig, description="API keys configuration (optional, falls back to environment variables)")
+    quick_mode: QuickModeConfig = Field(default_factory=QuickModeConfig, description="Quick mode configuration")
 
     # UI settings
     enable_global_progress_bar: bool = Field(True, description="Enable global progress bar display at bottom of screen")

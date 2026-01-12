@@ -177,16 +177,16 @@ export default function Home() {
       <Header />
 
       <div className="flex-1 flex">
-        {/* Sidebar - 20% width */}
-        <div className="w-1/5 min-w-[250px]">
+        {/* Sidebar */}
+        <div className="w-16 flex-shrink-0">
           <ModeSidebar
             currentMode={generationMode}
             onModeChange={handleModeChange}
           />
         </div>
 
-        {/* Main Content - 80% width */}
-        <div className="flex-1 overflow-y-auto">
+        {/* Main Content */}
+        <div className="flex-1 overflow-hidden flex flex-col items-center justify-start p-8">
           {generationMode === 'full' ? (
             // Full Mode Workflow
             <StepContainer currentStep={currentStep} totalSteps={5}>

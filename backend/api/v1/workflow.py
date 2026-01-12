@@ -312,7 +312,19 @@ async def get_workflow_asset(task_id: str, asset_type: str, filename: str):
             )
         
         logger.debug(f"WorkflowAPI | Serving asset | path={asset_path} | size={asset_path.stat().st_size}")
-        
+
+        # Verify file is readable and not locked
+        try:
+            with open(asset_path, 'rb') as f:
+                # Just read a small chunk to verify file is accessible
+                f.read(1)
+        except Exception as e:
+            logger.error(f"WorkflowAPI | File is not accessible | path={asset_path} | error={e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"File is currently being written to: {filename}. Please try again in a moment."
+            )
+
         # Determine media type
         suffix = asset_path.suffix.lower()
         media_type_map = {

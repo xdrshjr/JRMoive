@@ -295,7 +295,7 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-h-[calc(100vh-120px)] overflow-y-auto pr-2">
       {/* Progress Section */}
       <Card title="Video Generation Progress">
         <div className="space-y-6">

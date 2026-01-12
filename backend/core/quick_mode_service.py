@@ -176,7 +176,33 @@ class QuickModeService:
                 f"task_id={task_id} | video_path={video_path}"
             )
 
-            # Step 6: Build assets manifest
+            # Step 6: Verify video file is fully written and accessible
+            logger.info(f"QuickModeService | Verifying video file | task_id={task_id} | path={video_path}")
+            max_retries = 5
+            for i in range(max_retries):
+                try:
+                    # Check if file exists and has content
+                    if not Path(video_path).exists():
+                        raise FileNotFoundError(f"Video file not found: {video_path}")
+
+                    file_size = Path(video_path).stat().st_size
+                    if file_size == 0:
+                        raise ValueError(f"Video file is empty: {video_path}")
+
+                    # Try to open and read the file to verify it's not locked
+                    with open(video_path, 'rb') as f:
+                        f.read(1024)  # Read first 1KB to verify accessibility
+
+                    logger.info(f"QuickModeService | Video file verified | task_id={task_id} | size={file_size}")
+                    break
+                except Exception as e:
+                    if i == max_retries - 1:
+                        logger.error(f"QuickModeService | Failed to verify video file | task_id={task_id} | error={e}")
+                        raise
+                    logger.warning(f"QuickModeService | Video file not ready, retrying {i+1}/{max_retries} | task_id={task_id} | error={e}")
+                    await asyncio.sleep(0.5)  # Wait 500ms before retry
+
+            # Step 7: Build assets manifest
             if progress_callback:
                 await progress_callback(95, "Building assets manifest...")
 

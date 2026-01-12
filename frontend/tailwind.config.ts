@@ -9,7 +9,7 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Apple-inspired color palette
+        // Apple-inspired color palette - Gray/Black Theme
         apple: {
           blue: '#007AFF',
           purple: '#5856D6',
@@ -20,19 +20,22 @@ const config: Config = {
           yellow: '#FFCC00',
           teal: '#5AC8FA',
           indigo: '#5856D6',
+          gray: '#2C2C2E',
+          'gray-hover': '#3A3A3C',
+          'gray-active': '#48484A',
         },
-        // Light mode
-        background: '#FFFFFF',
-        surface: '#F5F5F7',
-        'surface-elevated': '#FFFFFF',
+        // Light mode - Gray/Black Theme
+        background: '#F5F5F7',
+        surface: '#FFFFFF',
+        'surface-elevated': '#FAFAFA',
         // Dark mode
         'dark-background': '#000000',
         'dark-surface': '#1C1C1E',
         'dark-surface-elevated': '#2C2C2E',
-        // Text
-        'text-primary': '#000000',
-        'text-secondary': '#86868B',
-        'text-tertiary': '#C7C7CC',
+        // Text - Gray/Black Theme
+        'text-primary': '#1C1C1E',
+        'text-secondary': '#6E6E73',
+        'text-tertiary': '#AEAEB2',
         'dark-text-primary': '#FFFFFF',
         'dark-text-secondary': '#98989D',
         'dark-text-tertiary': '#48484A',

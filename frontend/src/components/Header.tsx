@@ -3,12 +3,12 @@ import React from 'react';
 export const Header: React.FC = () => {
   return (
     <header className="glass-effect border-b border-text-tertiary sticky top-0 z-50">
-      <div className="container mx-auto px-6 py-4">
+      <div className="px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-apple-blue to-apple-purple rounded-apple-md flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-gradient-to-br from-gray-700 to-gray-900 rounded-apple-md flex items-center justify-center">
               <svg
-                className="w-6 h-6 text-white"
+                className="w-5 h-5 text-white"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -22,24 +22,24 @@ export const Header: React.FC = () => {
               </svg>
             </div>
             <div>
-              <h1 className="text-apple-title-3 font-bold text-text-primary">
+              <h1 className="text-lg font-bold text-text-primary">
                 AI Movie Generator
               </h1>
-              <p className="text-apple-caption text-text-secondary">
+              <p className="text-xs text-text-secondary">
                 Create stunning videos with AI
               </p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <a
-              href="https://github.com/yourusername/ai-movie-agent"
+              href="https://github.com/xdrshjr/JRMoive"
               target="_blank"
               rel="noopener noreferrer"
               className="text-text-secondary hover:text-text-primary transition-apple"
             >
               <svg
-                className="w-6 h-6"
+                className="w-5 h-5"
                 fill="currentColor"
                 viewBox="0 0 24 24"
               >

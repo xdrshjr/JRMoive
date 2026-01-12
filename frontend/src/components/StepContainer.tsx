@@ -20,7 +20,7 @@ export const StepContainer: React.FC<StepContainerProps> = ({
   ];
 
   return (
-    <div className="container mx-auto px-6 py-8 max-w-7xl">
+    <div className="container mx-auto px-4 py-6 max-w-6xl">
       {/* Step Indicator */}
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
@@ -29,17 +29,17 @@ export const StepContainer: React.FC<StepContainerProps> = ({
               {/* Step Circle */}
               <div className="flex flex-col items-center flex-1">
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center font-semibold transition-apple ${
+                  className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-apple ${
                     step.number < currentStep
                       ? 'bg-apple-green text-white'
                       : step.number === currentStep
-                      ? 'bg-apple-blue text-white'
-                      : 'bg-surface text-text-secondary'
+                      ? 'bg-gray-800 text-white'
+                      : 'bg-gray-200 text-text-secondary'
                   }`}
                 >
                   {step.number < currentStep ? (
                     <svg
-                      className="w-6 h-6"
+                      className="w-5 h-5"
                       fill="currentColor"
                       viewBox="0 0 20 20"
                     >
@@ -54,15 +54,15 @@ export const StepContainer: React.FC<StepContainerProps> = ({
                   )}
                 </div>
                 <p
-                  className={`mt-2 text-apple-caption font-medium text-center ${
+                  className={`mt-2 text-xs font-medium text-center ${
                     step.number === currentStep
-                      ? 'text-apple-blue'
+                      ? 'text-gray-800'
                       : 'text-text-secondary'
                   }`}
                 >
                   {step.title}
                 </p>
-                <p className="text-apple-caption text-text-tertiary text-center hidden sm:block">
+                <p className="text-xs text-text-tertiary text-center hidden sm:block">
                   {step.description}
                 </p>
               </div>
@@ -73,7 +73,7 @@ export const StepContainer: React.FC<StepContainerProps> = ({
                   className={`flex-1 h-1 mx-2 transition-apple ${
                     step.number < currentStep
                       ? 'bg-apple-green'
-                      : 'bg-surface'
+                      : 'bg-gray-200'
                   }`}
                   style={{ maxWidth: '80px' }}
                 />

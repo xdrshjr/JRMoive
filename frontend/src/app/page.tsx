@@ -186,7 +186,7 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 overflow-hidden flex flex-col items-center justify-start p-8">
+        <div className="flex-1 overflow-hidden flex flex-col items-center justify-start p-6">
           {generationMode === 'full' ? (
             // Full Mode Workflow
             <StepContainer currentStep={currentStep} totalSteps={5}>

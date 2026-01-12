@@ -13,10 +13,12 @@ export const LogViewer: React.FC<LogViewerProps> = ({
   autoScroll = true,
 }) => {
   const logEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (autoScroll && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll && containerRef.current) {
+      // Scroll the container to bottom
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
   }, [logs, autoScroll]);
 
@@ -42,7 +44,8 @@ export const LogViewer: React.FC<LogViewerProps> = ({
 
   return (
     <div
-      className="bg-surface rounded-apple-md p-4 font-mono text-sm overflow-y-auto"
+      ref={containerRef}
+      className="bg-surface rounded-apple-md p-4 font-mono text-sm overflow-y-auto scroll-smooth"
       style={{ maxHeight }}
     >
       {logs.length === 0 ? (

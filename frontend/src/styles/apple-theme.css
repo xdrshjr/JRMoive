@@ -69,11 +69,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 24px;
+  padding: 10px 20px;
   border-radius: var(--radius-md);
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: -0.41px;
+  letter-spacing: -0.24px;
   transition: all var(--transition-duration) var(--transition-timing);
   cursor: pointer;
   border: none;
@@ -81,26 +81,27 @@
 }
 
 .btn-apple-primary {
-  background-color: var(--color-primary);
+  background-color: #2C2C2E;
   color: white;
 }
 
 .btn-apple-primary:hover {
-  background-color: #0051D5;
+  background-color: #3A3A3C;
 }
 
 .btn-apple-primary:active {
-  background-color: #004FC4;
+  background-color: #48484A;
   transform: scale(0.98);
 }
 
 .btn-apple-secondary {
-  background-color: var(--color-surface);
+  background-color: #F5F5F7;
   color: var(--color-text-primary);
+  border: 1px solid #E5E5E7;
 }
 
 .btn-apple-secondary:hover {
-  background-color: #E8E8ED;
+  background-color: #EBEBED;
 }
 
 .btn-apple-secondary:active {

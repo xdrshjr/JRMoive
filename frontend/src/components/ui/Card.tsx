@@ -17,17 +17,17 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div
-      className={`card-apple ${hoverable ? '' : 'hover:shadow-apple-md hover:transform-none'} ${className}`}
+      className={`card-apple border border-gray-200 ${hoverable ? '' : 'hover:shadow-apple-md hover:transform-none'} ${className}`}
     >
       {(title || subtitle) && (
         <div className="mb-4">
           {title && (
-            <h3 className="text-apple-title-3 font-semibold text-text-primary">
+            <h3 className="text-lg font-semibold text-text-primary">
               {title}
             </h3>
           )}
           {subtitle && (
-            <p className="text-apple-subheadline text-text-secondary mt-1">
+            <p className="text-sm text-text-secondary mt-1">
               {subtitle}
             </p>
           )}

@@ -7,21 +7,23 @@
 
 /* Apple Design System Variables */
 :root {
-  /* Colors - Light Mode */
-  --color-primary: #007AFF;
-  --color-primary-alpha: rgba(0, 122, 255, 0.1);
+  /* Colors - Light Mode - Gray/Black Theme */
+  --color-primary: #2C2C2E;
+  --color-primary-alpha: rgba(44, 44, 46, 0.1);
+  --color-primary-hover: #3A3A3C;
+  --color-primary-active: #48484A;
   --color-secondary: #5856D6;
   --color-success: #34C759;
   --color-warning: #FF9500;
   --color-error: #FF3B30;
-  
-  --color-background: #FFFFFF;
-  --color-surface: #F5F5F7;
-  --color-surface-elevated: #FFFFFF;
-  
-  --color-text-primary: #000000;
-  --color-text-secondary: #86868B;
-  --color-text-tertiary: #C7C7CC;
+
+  --color-background: #F5F5F7;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #FAFAFA;
+
+  --color-text-primary: #1C1C1E;
+  --color-text-secondary: #6E6E73;
+  --color-text-tertiary: #AEAEB2;
   
   /* Shadows */
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);

@@ -4,7 +4,7 @@ interface ProgressBarProps {
   progress: number; // 0-100
   label?: string;
   showPercentage?: boolean;
-  color?: 'blue' | 'green' | 'orange' | 'red';
+  color?: 'blue' | 'green' | 'orange' | 'red' | 'gray';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -12,16 +12,17 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   progress,
   label,
   showPercentage = true,
-  color = 'blue',
+  color = 'gray',
   size = 'md',
 }) => {
   const clampedProgress = Math.min(Math.max(progress, 0), 100);
-  
+
   const colorClasses = {
     blue: 'bg-apple-blue',
     green: 'bg-apple-green',
     orange: 'bg-apple-orange',
     red: 'bg-apple-red',
+    gray: 'bg-gray-800',
   };
   
   const sizeClasses = {

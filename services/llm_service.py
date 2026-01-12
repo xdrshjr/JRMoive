@@ -61,9 +61,10 @@ class LLMService:
             "Authorization": f"Bearer {self.api_key}",
         }
 
+        # No timeout for LLM requests - they may take a long time for complex tasks
         self.client = httpx.AsyncClient(
             headers=headers,
-            timeout=60.0
+            timeout=None
         )
 
     async def close(self):

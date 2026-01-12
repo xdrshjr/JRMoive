@@ -1,0 +1,170 @@
+title: "The Birth of AGI"
+author: "AI Screenwriter"
+description: "A young coder living in poverty creates a groundbreaking artificial general intelligence."
+
+characters:
+  - name: "Xiao Ming"
+    description: "A determined 25-year-old programmer with messy hair, wearing worn-out clothes, working tirelessly on AI projects."
+    age: 25
+    gender: "male"
+    appearance: "Short black hair, tired eyes, pale skin, wearing an old hoodie and jeans."
+
+scenes:
+  - scene_id: "scene_001"
+    location: "A small, cluttered apartment in a rundown neighborhood"
+    time: "Late night"
+    weather: null
+    atmosphere: "Grim and oppressive"
+    description: "A dimly lit room filled with stacks of books, empty food containers, and multiple computer monitors glowing in the dark. Xiao Ming sits hunched over his desk, typing furiously."
+    shot_type: "medium_shot"
+    camera_movement: "static"
+    duration: 8.0
+    visual_style: "cinematic"
+    color_tone: "cold"
+    action: "Xiao Ming types rapidly on his keyboard while staring intently at the screens."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "Xiao Ming"
+    dialogues:
+      - character: "Xiao Ming"
+        content: "\"Just one more line of code... it has to work this time.\""
+        emotion: "determined"
+        voice_style: "urgent"
+    narrations:
+      - content: "\"In a cramped apartment, Xiao Ming spent countless nights chasing his dream.\""
+        voice_style: "calm"
+    sound_effects:
+      - description: "Keyboard clicking sounds"
+        timing: 2.0
+    sub_scenes: []
+
+  - scene_id: "scene_002"
+    location: "Same apartment, different angle"
+    time: "Late night"
+    weather: null
+    atmosphere: "Tense but hopeful"
+    description: "Close-up of Xiao Ming's face illuminated by the blue light of his monitors. His eyes flicker between screens as lines of code scroll past."
+    shot_type: "close_up"
+    camera_movement: "tilt"
+    duration: 7.0
+    visual_style: "cinematic"
+    color_tone: "neutral"
+    action: "Xiao Ming leans back, rubs his temples, then resumes coding."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "Xiao Ming"
+    dialogues:
+      - character: "Xiao Ming"
+        content: "\"AI, optimize this algorithm for me.\""
+        emotion: "focused"
+        voice_style: "commanding"
+    narrations: []
+    sound_effects:
+      - description: "Computer fans whirring"
+        timing: 3.0
+    sub_scenes: []
+
+  - scene_id: "scene_003"
+    location: "Apartment balcony"
+    time: "Early morning"
+    weather: "Overcast"
+    atmosphere: "Reflective"
+    description: "Xiao Ming steps out onto a tiny balcony, holding a cup of coffee. The city skyline is visible in the distance, shrouded in smog."
+    shot_type: "long_shot"
+    camera_movement: "pan"
+    duration: 9.0
+    visual_style: "realistic"
+    color_tone: "grayish"
+    action: "Xiao Ming takes a sip of coffee and gazes at the horizon, lost in thought."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "Xiao Ming"
+    dialogues: []
+    narrations:
+      - content: "\"Every sunrise brought new challenges, but also renewed hope.\""
+        voice_style: "poignant"
+    sound_effects:
+      - description: "Distant traffic noise"
+        timing: 4.0
+    sub_scenes: []
+
+  - scene_id: "scene_004"
+    location: "Inside the apartment, main workstation"
+    time: "Morning"
+    weather: null
+    atmosphere: "Electric excitement"
+    description: "Xiao Ming's screen flashes green as the program completes its final test. He jumps up from his chair, unable to contain his joy."
+    shot_type: "full_shot"
+    camera_movement: "zoom"
+    duration: 8.0
+    visual_style: "dynamic"
+    color_tone: "vibrant"
+    action: "Xiao Ming claps his hands and shouts triumphantly."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "Xiao Ming"
+    dialogues:
+      - character: "Xiao Ming"
+        content: "\"It works! I did it!\""
+        emotion: "ecstatic"
+        voice_style: "excited"
+    narrations: []
+    sound_effects:
+      - description: "Triumphant chime sound"
+        timing: 6.0
+    sub_scenes: []
+
+  - scene_id: "scene_005"
+    location: "News studio"
+    time: "Evening"
+    weather: null
+    atmosphere: "Professional yet celebratory"
+    description: "A news anchor sits behind a polished desk, smiling as she reads from a teleprompter. A large screen behind her displays Xiao Ming's face and the headline 'Breakthrough in AI Technology.'"
+    shot_type: "medium_shot"
+    camera_movement: "static"
+    duration: 7.0
+    visual_style: "clean"
+    color_tone: "bright"
+    action: "The anchor gestures toward the screen as it transitions to footage of Xiao Ming."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters: []
+    dialogues:
+      - character: "News Anchor"
+        content: "\"In a historic achievement, a young programmer named Xiao Ming has created what experts are calling the first true Artificial General Intelligence.\""
+        emotion: "enthusiastic"
+        voice_style: "professional"
+    narrations: []
+    sound_effects:
+      - description: "Audience applause"
+        timing: 5.0
+    sub_scenes: []
+
+  - scene_id: "scene_006"
+    location: "Apartment, same setup as scene 001"
+    time: "Night"
+    weather: null
+    atmosphere: "Calm satisfaction"
+    description: "Xiao Ming sits back in his chair, exhausted but content. The glow of his monitors reflects softly on his face as he watches the news coverage about his invention."
+    shot_type: "medium_shot"
+    camera_movement: "dolly"
+    duration: 10.0
+    visual_style: "intimate"
+    color_tone: "warm"
+    action: "Xiao Ming smiles faintly, closes his eyes, and lets out a deep sigh."
+    extract_frame_index: -5
+    base_image_filename: null
+    characters:
+      - "Xiao Ming"
+    dialogues: []
+    narrations:
+      - content: "\"Against all odds, a dream became reality.\""
+        voice_style: "reflective"
+    sound_effects:
+      - description: "Soft ambient hum"
+        timing: 3.0
+    sub_scenes: []

@@ -2,11 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Textarea, Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui';
+import ScriptConfiguration from '@/components/ScriptConfiguration';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { APIException } from '@/lib/types';
 import { getScriptPrompts } from '@/lib/scriptPrompts';
 import { validateYAMLScript, getSampleYAMLScript } from '@/lib/yamlValidator';
+import {
+  ScriptGenerationConfig,
+  DEFAULT_SCRIPT_CONFIG,
+  validateScriptConfig,
+} from '@/lib/types/scriptConfig';
 
 interface Step1ScriptInputProps {
   onNext: (userScript: string, polishedScript: string) => void;
@@ -30,9 +36,15 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   const [polishedScript, setPolishedScript] = useState(initialPolishedScript);
   const [isPolishing, setIsPolishing] = useState(false);
 
+  // Configuration state
+  const [config, setConfig] = useState<ScriptGenerationConfig>(DEFAULT_SCRIPT_CONFIG);
+  const [configValid, setConfigValid] = useState(true);
+  const [configErrors, setConfigErrors] = useState<string[]>([]);
+  const [showConfig, setShowConfig] = useState(true);
+
   // Direct mode state
   const [directScript, setDirectScript] = useState(initialPolishedScript || '');
-  
+
   // Common state
   const [error, setError] = useState<string | null>(null);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
@@ -46,6 +58,18 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       setMode(savedMode);
       logger.debug('Step1ScriptInput', 'Loaded saved mode preference', { mode: savedMode });
     }
+
+    // Load saved configuration
+    const savedConfig = localStorage.getItem('scriptGenerationConfig');
+    if (savedConfig) {
+      try {
+        const parsedConfig = JSON.parse(savedConfig);
+        setConfig(parsedConfig);
+        logger.debug('Step1ScriptInput', 'Loaded saved configuration', { config: parsedConfig });
+      } catch (e) {
+        logger.warn('Step1ScriptInput', 'Failed to parse saved configuration', e);
+      }
+    }
   }, []);
 
   // Save mode preference to localStorage when it changes
@@ -56,10 +80,24 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
     }
   }, [mode, isMounted]);
 
+  // Save configuration to localStorage when it changes
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('scriptGenerationConfig', JSON.stringify(config));
+      logger.debug('Step1ScriptInput', 'Configuration saved', { config });
+    }
+  }, [config, isMounted]);
+
+  // Handle configuration validation
+  const handleConfigValidationChange = (isValid: boolean, errors: string[]) => {
+    setConfigValid(isValid);
+    setConfigErrors(errors);
+  };
+
   // Handle mode change with unsaved content warning
   const handleModeChange = (newMode: string) => {
     const newModeValue = newMode as ScriptMode;
-    
+
     if (mode === 'polish' && userScript.trim() && !polishedScript.trim()) {
       const confirmed = window.confirm(
         'You have unpolished script content. Switching modes will keep your work. Continue?'
@@ -69,7 +107,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
         return;
       }
     }
-    
+
     if (mode === 'direct' && directScript.trim() && newModeValue === 'polish') {
       const confirmed = window.confirm(
         'You have direct script content. Switching to polish mode will preserve it. Continue?'
@@ -94,21 +132,30 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       return;
     }
 
+    // Validate configuration
+    if (!configValid) {
+      setError(`Configuration errors: ${configErrors.join(', ')}`);
+      logger.warn('Step1ScriptInput', 'Polish attempted with invalid configuration', { configErrors });
+      return;
+    }
+
     logger.info('Step1ScriptInput', 'User submitted script for polishing', {
       scriptLength: userScript.length,
+      config,
     });
     setIsPolishing(true);
     setError(null);
     setValidationWarnings([]);
 
     try {
-      // Get language-appropriate prompts
-      const prompts = getScriptPrompts(userScript);
-      
+      // Get language-appropriate prompts with configuration
+      const prompts = getScriptPrompts(userScript, config);
+
       logger.debug('Step1ScriptInput', 'Using prompts for polishing', {
         language: prompts.language,
         systemPromptLength: prompts.systemPrompt.length,
         userMessageLength: prompts.userMessage.length,
+        config,
       });
 
       const response = await apiClient.chat({
@@ -127,16 +174,16 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       });
 
       const polished = response.choices[0]?.message?.content || '';
-      
+
       if (!polished) {
         logger.error('Step1ScriptInput', 'Empty response from LLM');
         setError('Received empty response from AI. Please try again.');
         return;
       }
-      
+
       // Validate the polished YAML
       const validation = validateYAMLScript(polished);
-      
+
       if (!validation.isValid) {
         logger.warn('Step1ScriptInput', 'Generated script validation failed', {
           errors: validation.errors,
@@ -152,7 +199,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
         });
         setValidationWarnings(validation.warnings);
       }
-      
+
       setPolishedScript(polished);
       logger.info('Step1ScriptInput', 'Script polished successfully', {
         originalLength: userScript.length,
@@ -163,7 +210,7 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
       });
     } catch (err) {
       logger.error('Step1ScriptInput', 'Failed to polish script', err);
-      
+
       if (err instanceof APIException) {
         setError(`Failed to polish script: ${err.message}`);
       } else {
@@ -252,6 +299,56 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Configuration Panel - Only show in Polish mode */}
+      {mode === 'polish' && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowConfig(!showConfig)}
+            className="flex items-center gap-2 mb-4 text-apple-blue hover:text-apple-blue-dark transition-colors"
+          >
+            <svg
+              className={`w-5 h-5 transition-transform ${showConfig ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            <span className="text-apple-headline font-semibold">
+              {showConfig ? '隐藏配置选项' : '显示配置选项'} / Script Configuration
+            </span>
+          </button>
+
+          {showConfig && (
+            <Card
+              title="剧本生成配置 / Script Generation Configuration"
+              subtitle="配置剧本的类型、角色、场景和内容安全选项"
+            >
+              <ScriptConfiguration
+                config={config}
+                onChange={setConfig}
+                onValidationChange={handleConfigValidationChange}
+              />
+            </Card>
+          )}
+
+          {/* Configuration Errors */}
+          {!configValid && configErrors.length > 0 && (
+            <div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-apple-red rounded-apple-md p-4">
+              <h4 className="text-sm font-semibold text-apple-red mb-2">
+                ⚠️ Configuration Errors:
+              </h4>
+              <ul className="text-sm text-apple-red list-disc list-inside space-y-1">
+                {configErrors.map((error, idx) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Mode Selection Tabs */}
       <Card title="Generate Script" subtitle="Choose how you want to create your video script">
         <Tabs value={mode} onValueChange={handleModeChange}>
@@ -273,13 +370,13 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
                 value={userScript}
                 onChange={(e) => setUserScript(e.target.value)}
                 rows={8}
-                helperText="Provide a brief description or outline of your video script. The AI will convert it into a structured YAML format."
+                helperText="Provide a brief description or outline of your video script. The AI will convert it into a structured YAML format based on your configuration."
               />
               <div>
                 <Button
                   onClick={handlePolish}
                   loading={isPolishing}
-                  disabled={!userScript.trim() || isPolishing}
+                  disabled={!userScript.trim() || isPolishing || !configValid}
                 >
                   {isPolishing ? 'Polishing Script...' : 'Polish Script with AI'}
                 </Button>
@@ -335,8 +432,8 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
 
       {/* Polished/Editable Script Section */}
       {finalScript && (
-        <Card 
-          title={mode === 'polish' ? 'Polished Script (Editable)' : 'Script Preview'} 
+        <Card
+          title={mode === 'polish' ? 'Polished Script (Editable)' : 'Script Preview'}
           subtitle="You can edit the script before proceeding"
         >
           <Textarea

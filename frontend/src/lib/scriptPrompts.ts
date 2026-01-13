@@ -6,6 +6,7 @@
  */
 
 import { ScriptGenerationConfig, GENRE_LABELS } from './types/scriptConfig';
+import { getVideoTypeDisplayName, getSubtypeDisplayName, getSubtypeDescription, VIDEO_TYPE_DEFINITIONS } from './types/videoTypes';
 
 /**
  * Detects if the input text is primarily in Chinese
@@ -24,6 +25,21 @@ export function detectLanguage(text: string): 'zh' | 'en' {
  */
 function buildChineseConfigConstraints(config: ScriptGenerationConfig): string {
   const constraints: string[] = [];
+
+  // Video type (NEW)
+  if (config.videoType && config.videoSubtype) {
+    const typeName = getVideoTypeDisplayName(config.videoType, 'zh');
+    const subtypeName = getSubtypeDisplayName(config.videoType, config.videoSubtype, 'zh');
+    const subtypeDesc = getSubtypeDescription(config.videoType, config.videoSubtype, 'zh');
+    const styleKeywords = VIDEO_TYPE_DEFINITIONS[config.videoType].subtypes[config.videoSubtype]?.styleKeywords || [];
+
+    constraints.push(`- **视频类型**: ${typeName} - ${subtypeName}`);
+    constraints.push(`  - 风格描述: ${subtypeDesc}`);
+    if (styleKeywords.length > 0) {
+      constraints.push(`  - 风格关键词: ${styleKeywords.join(', ')}`);
+    }
+    constraints.push(`  - **重要**: 请根据此视频类型调整剧本风格、场景设置、角色类型和视觉描述`);
+  }
 
   // Genre
   const genreLabel = config.genre === 'other' && config.genreCustom
@@ -97,6 +113,21 @@ function buildChineseConfigConstraints(config: ScriptGenerationConfig): string {
  */
 function buildEnglishConfigConstraints(config: ScriptGenerationConfig): string {
   const constraints: string[] = [];
+
+  // Video type (NEW)
+  if (config.videoType && config.videoSubtype) {
+    const typeName = getVideoTypeDisplayName(config.videoType, 'en');
+    const subtypeName = getSubtypeDisplayName(config.videoType, config.videoSubtype, 'en');
+    const subtypeDesc = getSubtypeDescription(config.videoType, config.videoSubtype, 'en');
+    const styleKeywords = VIDEO_TYPE_DEFINITIONS[config.videoType].subtypes[config.videoSubtype]?.styleKeywords || [];
+
+    constraints.push(`- **Video Type**: ${typeName} - ${subtypeName}`);
+    constraints.push(`  - Style Description: ${subtypeDesc}`);
+    if (styleKeywords.length > 0) {
+      constraints.push(`  - Style Keywords: ${styleKeywords.join(', ')}`);
+    }
+    constraints.push(`  - **IMPORTANT**: Adapt the script style, scene settings, character types, and visual descriptions to match this video type`);
+  }
 
   // Genre
   const genreLabel = config.genre === 'other' && config.genreCustom

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Header from '@/components/Header';
 import StepContainer from '@/components/StepContainer';
 import ModeSidebar from '@/components/ModeSidebar';
+import Step0VideoTypeSelection from '@/components/steps/Step0VideoTypeSelection';
 import Step1ScriptInput from '@/components/steps/Step1ScriptInput';
 import Step2CharacterImages from '@/components/steps/Step2CharacterImages';
 import Step3SceneImages from '@/components/steps/Step3SceneImages';
@@ -12,6 +13,7 @@ import Step5ResultPreview from '@/components/steps/Step5ResultPreview';
 import QuickStep1ImageUpload from '@/components/steps/QuickStep1ImageUpload';
 import QuickStep2SceneConfig from '@/components/steps/QuickStep2SceneConfig';
 import { Character, Scene, GenerationMode, QuickModeScene } from '@/lib/types';
+import { VideoType, VideoSubtype } from '@/lib/types/videoTypes';
 import { logger } from '@/lib/logger';
 
 export default function Home() {
@@ -19,7 +21,9 @@ export default function Home() {
   const [generationMode, setGenerationMode] = useState<GenerationMode>('full');
 
   // Full mode state
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(0); // Changed from 1 to 0
+  const [videoType, setVideoType] = useState<VideoType | null>(null);
+  const [videoSubtype, setVideoSubtype] = useState<VideoSubtype | null>(null);
   const [userScript, setUserScript] = useState('');
   const [polishedScript, setPolishedScript] = useState('');
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -33,7 +37,7 @@ export default function Home() {
   const [videoUrl, setVideoUrl] = useState('');
   const [videoMetadata, setVideoMetadata] = useState<any>(null);
 
-  // Handle mode change
+    // Handle mode change
   const handleModeChange = (newMode: GenerationMode) => {
     if (newMode === generationMode) return;
 
@@ -53,8 +57,10 @@ export default function Home() {
 
     // Reset state
     setGenerationMode(newMode);
-    setCurrentStep(1);
+    setCurrentStep(0); // Changed from 1 to 0
     setQuickStep(1);
+    setVideoType(null);
+    setVideoSubtype(null);
     setUserScript('');
     setPolishedScript('');
     setCharacters([]);
@@ -65,6 +71,16 @@ export default function Home() {
   };
 
   // Full mode handlers
+  const handleStep0Complete = (selectedVideoType: VideoType, selectedVideoSubtype: VideoSubtype) => {
+    logger.info('MainApp', 'Step 0 completed', {
+      videoType: selectedVideoType,
+      videoSubtype: selectedVideoSubtype,
+    });
+    setVideoType(selectedVideoType);
+    setVideoSubtype(selectedVideoSubtype);
+    setCurrentStep(1);
+  };
+
   const handleStep1Complete = (userScriptText: string, polishedScriptText: string) => {
     logger.info('MainApp', 'Step 1 completed', {
       userScriptLength: userScriptText.length,
@@ -73,6 +89,11 @@ export default function Home() {
     setUserScript(userScriptText);
     setPolishedScript(polishedScriptText);
     setCurrentStep(2);
+  };
+
+  const handleStep1Back = () => {
+    logger.info('MainApp', 'Returning to Step 0 from Step 1');
+    setCurrentStep(0);
   };
 
   const handleStep2Complete = (selectedCharacters: Character[]) => {
@@ -117,8 +138,10 @@ export default function Home() {
   };
 
   const handleRegenerate = () => {
-    logger.info('MainApp', 'User initiated regeneration - resetting to Step 1');
-    setCurrentStep(1);
+    logger.info('MainApp', 'User initiated regeneration - resetting to Step 0');
+    setCurrentStep(0);
+    setVideoType(null);
+    setVideoSubtype(null);
     setUserScript('');
     setPolishedScript('');
     setCharacters([]);
@@ -189,18 +212,31 @@ export default function Home() {
         <div className="flex-1 overflow-hidden flex flex-col items-center justify-start p-6">
           {generationMode === 'full' ? (
             // Full Mode Workflow
-            <StepContainer currentStep={currentStep} totalSteps={5}>
+            <StepContainer currentStep={currentStep} totalSteps={6}>
+              {currentStep === 0 && (
+                <Step0VideoTypeSelection
+                  onNext={handleStep0Complete}
+                  initialVideoType={videoType || undefined}
+                  initialVideoSubtype={videoSubtype || undefined}
+                />
+              )}
+
               {currentStep === 1 && (
                 <Step1ScriptInput
                   onNext={handleStep1Complete}
+                  onBack={handleStep1Back}
                   initialUserScript={userScript}
                   initialPolishedScript={polishedScript}
+                  videoType={videoType || undefined}
+                  videoSubtype={videoSubtype || undefined}
                 />
               )}
 
               {currentStep === 2 && (
                 <Step2CharacterImages
                   polishedScript={polishedScript}
+                  videoType={videoType || undefined}
+                  videoSubtype={videoSubtype || undefined}
                   onNext={handleStep2Complete}
                   onBack={handleStep2Back}
                   initialCharacters={characters}
@@ -221,6 +257,8 @@ export default function Home() {
                   polishedScript={polishedScript}
                   characters={characters}
                   scenes={scenes}
+                  videoType={videoType || undefined}
+                  videoSubtype={videoSubtype || undefined}
                   onComplete={handleStep4Complete}
                   onCancel={handleStep4Cancel}
                 />

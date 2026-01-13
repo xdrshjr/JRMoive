@@ -6,10 +6,13 @@ import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { processImageResults } from '@/lib/imageHelpers';
 import { Character, APIException } from '@/lib/types';
+import { VideoType, VideoSubtype, VIDEO_TYPE_DEFINITIONS } from '@/lib/types/videoTypes';
 import { parseYamlScript, extractCharactersFromParsedScript } from '@/lib/yamlParser';
 
 interface Step2CharacterImagesProps {
   polishedScript: string;
+  videoType?: VideoType;
+  videoSubtype?: VideoSubtype;
   onNext: (characters: Character[]) => void;
   onBack: () => void;
   initialCharacters?: Character[];
@@ -17,6 +20,8 @@ interface Step2CharacterImagesProps {
 
 export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
   polishedScript,
+  videoType,
+  videoSubtype,
   onNext,
   onBack,
   initialCharacters = [],
@@ -107,9 +112,9 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
       const imagePromises = Array.from({ length: character.imageCount }).map((_, index) => {
         logger.debug('Step2CharacterImages', `Generating image ${index + 1}/${character.imageCount} for ${characterName}`);
         // Build character reference prompt similar to CLI
-        const prompt = buildCharacterReferencePrompt(character);
+        const prompt = buildCharacterReferencePrompt(character, videoType, videoSubtype);
         logger.debug('Step2CharacterImages', `Image ${index + 1} prompt`, { promptLength: prompt.length });
-        
+
         return apiClient.generateImage({
           prompt,
           service: 'doubao',
@@ -598,15 +603,44 @@ export const Step2CharacterImages: React.FC<Step2CharacterImagesProps> = ({
  * Build character reference prompt similar to CLI implementation
  * Based on agents/character_reference_agent.py
  */
-function buildCharacterReferencePrompt(character: Character): string {
+function buildCharacterReferencePrompt(
+  character: Character,
+  videoType?: VideoType,
+  videoSubtype?: VideoSubtype
+): string {
   const promptParts: string[] = [];
 
-  // Style keywords (photorealistic style - matching CLI)
-  promptParts.push(
-    'photorealistic, realistic photography, real person, ' +
-    'cinematic lighting, professional photography, ' +
-    'highly detailed, natural skin texture, realistic features'
-  );
+  // Get style keywords based on video type
+  let styleKeywords: string[];
+
+  if (videoType && videoSubtype && VIDEO_TYPE_DEFINITIONS[videoType]) {
+    const subtypeDef = VIDEO_TYPE_DEFINITIONS[videoType].subtypes[videoSubtype];
+    if (subtypeDef) {
+      styleKeywords = subtypeDef.styleKeywords;
+      logger.info('Step2CharacterImages', `Using video type style for character`, {
+        videoType,
+        videoSubtype,
+        styleKeywords,
+      });
+    } else {
+      // Fallback to photorealistic
+      styleKeywords = [
+        'photorealistic', 'realistic photography', 'real person',
+        'cinematic lighting', 'professional photography',
+        'highly detailed', 'natural skin texture', 'realistic features'
+      ];
+    }
+  } else {
+    // Default to photorealistic style
+    styleKeywords = [
+      'photorealistic', 'realistic photography', 'real person',
+      'cinematic lighting', 'professional photography',
+      'highly detailed', 'natural skin texture', 'realistic features'
+    ];
+  }
+
+  // Add style keywords
+  promptParts.push(styleKeywords.join(', '));
 
   // Character name
   promptParts.push(character.name);

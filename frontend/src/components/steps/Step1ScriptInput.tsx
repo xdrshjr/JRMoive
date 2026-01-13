@@ -6,6 +6,7 @@ import ScriptConfiguration from '@/components/ScriptConfiguration';
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { APIException } from '@/lib/types';
+import { VideoType, VideoSubtype, getVideoTypeDisplayName, getSubtypeDisplayName } from '@/lib/types/videoTypes';
 import { getScriptPrompts } from '@/lib/scriptPrompts';
 import { validateYAMLScript, getSampleYAMLScript } from '@/lib/yamlValidator';
 import {
@@ -16,16 +17,22 @@ import {
 
 interface Step1ScriptInputProps {
   onNext: (userScript: string, polishedScript: string) => void;
+  onBack?: () => void;
   initialUserScript?: string;
   initialPolishedScript?: string;
+  videoType?: VideoType;
+  videoSubtype?: VideoSubtype;
 }
 
 type ScriptMode = 'polish' | 'direct';
 
 export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   onNext,
+  onBack,
   initialUserScript = '',
   initialPolishedScript = '',
+  videoType,
+  videoSubtype,
 }) => {
   // Mode state - default to 'polish', will load from localStorage after mount
   const [mode, setMode] = useState<ScriptMode>('polish');
@@ -37,7 +44,11 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
   const [isPolishing, setIsPolishing] = useState(false);
 
   // Configuration state
-  const [config, setConfig] = useState<ScriptGenerationConfig>(DEFAULT_SCRIPT_CONFIG);
+  const [config, setConfig] = useState<ScriptGenerationConfig>({
+    ...DEFAULT_SCRIPT_CONFIG,
+    videoType,
+    videoSubtype,
+  });
   const [configValid, setConfigValid] = useState(true);
   const [configErrors, setConfigErrors] = useState<string[]>([]);
   const [showConfig, setShowConfig] = useState(true);
@@ -64,13 +75,22 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
     if (savedConfig) {
       try {
         const parsedConfig = JSON.parse(savedConfig);
-        setConfig(parsedConfig);
-        logger.debug('Step1ScriptInput', 'Loaded saved configuration', { config: parsedConfig });
+        // Merge saved config with video type from props (props take precedence)
+        setConfig({
+          ...parsedConfig,
+          videoType,
+          videoSubtype,
+        });
+        logger.debug('Step1ScriptInput', 'Loaded saved configuration with video type override', {
+          config: parsedConfig,
+          videoType,
+          videoSubtype,
+        });
       } catch (e) {
         logger.warn('Step1ScriptInput', 'Failed to parse saved configuration', e);
       }
     }
-  }, []);
+  }, [videoType, videoSubtype]);
 
   // Save mode preference to localStorage when it changes
   useEffect(() => {
@@ -299,6 +319,39 @@ export const Step1ScriptInput: React.FC<Step1ScriptInputProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Video Type Display Badge */}
+      {videoType && videoSubtype && (
+        <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+              </svg>
+              <span className="font-semibold text-gray-900 dark:text-white">
+                视频类型:
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 rounded-full text-sm font-medium">
+                {getVideoTypeDisplayName(videoType, 'zh')}
+              </span>
+              <span className="text-gray-400 dark:text-gray-500">→</span>
+              <span className="px-3 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 rounded-full text-sm font-medium">
+                {getSubtypeDisplayName(videoType, videoSubtype, 'zh')}
+              </span>
+            </div>
+          </div>
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              ← 返回修改
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Configuration Panel - Only show in Polish mode */}
       {mode === 'polish' && (
         <div>

@@ -206,6 +206,14 @@ class WorkflowConfig(BaseModel):
 class WorkflowGenerationRequest(BaseModel):
     """Request to generate a full video workflow"""
     script: str = Field(..., min_length=10, description="Polished script text in markdown format")
+    video_type: Optional[str] = Field(
+        None,
+        description="Video type: news_broadcast, anime, movie, short_drama"
+    )
+    video_subtype: Optional[str] = Field(
+        None,
+        description="Video subtype (varies by type)"
+    )
     character_images: Optional[Dict[str, str]] = Field(
         None,
         description="Character name -> base64/url mapping (optional, will generate if not provided)"
@@ -215,7 +223,7 @@ class WorkflowGenerationRequest(BaseModel):
         description="Scene ID -> base64/url mapping (optional, will generate if not provided)"
     )
     config: Optional[WorkflowConfig] = Field(None, description="Workflow configuration")
-    
+
     @validator('script')
     def validate_script_not_empty(cls, v):
         if not v or not v.strip():

@@ -5,11 +5,14 @@ import { Card, Button, ProgressBar, LogViewer, LoadingAnimation } from '@/compon
 import { apiClient } from '@/lib/api';
 import { logger } from '@/lib/logger';
 import { Scene, Character, LogEntry, TaskStatusResponse, APIException, QuickModeScene } from '@/lib/types';
+import { VideoType, VideoSubtype } from '@/lib/types/videoTypes';
 
 interface Step4VideoProgressProps {
   polishedScript: string;
   characters: Character[];
   scenes: Scene[];
+  videoType?: VideoType;
+  videoSubtype?: VideoSubtype;
   onComplete: (videoUrl: string, metadata: any) => void;
   onCancel: () => void;
   quickModeScenes?: QuickModeScene[];
@@ -20,6 +23,8 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   polishedScript,
   characters,
   scenes,
+  videoType,
+  videoSubtype,
   onComplete,
   onCancel,
   quickModeScenes = [],
@@ -158,6 +163,8 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       // Call workflow API with cleaned script
       const response = await apiClient.startWorkflow({
         script: cleanedScript,
+        videoType,
+        videoSubtype,
         characterImages: Object.keys(characterImages).length > 0 ? characterImages : undefined,
         sceneImages: Object.keys(sceneImages).length > 0 ? sceneImages : undefined,
         config: {

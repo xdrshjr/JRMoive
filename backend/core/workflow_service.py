@@ -45,24 +45,28 @@ class WorkflowService:
         character_images: Optional[Dict[str, str]] = None,
         scene_images: Optional[Dict[str, str]] = None,
         config: Optional[WorkflowConfig] = None,
+        video_type: Optional[str] = None,
+        video_subtype: Optional[str] = None,
         progress_callback: Optional[Callable] = None,
         base_url: str = ""
     ) -> WorkflowResult:
         """
         Execute the complete workflow generation
-        
+
         Args:
             task_id: Unique task identifier
             script: Polished script text
             character_images: Optional character name -> base64/url mapping
             scene_images: Optional scene ID -> image_path mapping
             config: Workflow configuration
+            video_type: Video type (news_broadcast, anime, movie, short_drama)
+            video_subtype: Video subtype (varies by type)
             progress_callback: Optional progress callback function
             base_url: Base URL for generating asset URLs
-            
+
         Returns:
             WorkflowResult with video path and assets
-            
+
         Raises:
             Exception: If workflow execution fails
         """
@@ -92,13 +96,15 @@ class WorkflowService:
             logger.info(f"WorkflowService | Creating temporary project | task_id={task_id}")
             if progress_callback:
                 await progress_callback(5, "Creating project structure...")
-            
+
             project_path, saved_character_images = await self.temp_project_manager.create_temp_project(
                 task_id=task_id,
                 script=script,
                 config=config,
                 character_images=character_images,
-                scene_images=scene_images
+                scene_images=scene_images,
+                video_type=video_type,
+                video_subtype=video_subtype
             )
             logger.info(
                 f"WorkflowService | Project created | "

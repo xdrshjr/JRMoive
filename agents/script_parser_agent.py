@@ -7,6 +7,7 @@ from models.script_models import (
     Script, Scene, SubScene, Character, Dialogue,
     ShotType, CameraMovement, Narration, SoundEffect
 )
+from models.video_types import VideoType, get_video_type_config, validate_video_type_combination
 from agents.base_agent import BaseAgent, AgentState
 from utils.duration_calculator import DurationCalculator
 from config.settings import settings
@@ -190,7 +191,43 @@ class ScriptParserAgent(BaseAgent):
                     raise ValueError(f"Invalid scene at index {idx}: {str(e)}")
             
             self.logger.info(f"ScriptParserAgent | Parsed {len(scenes)} scenes")
-            
+
+            # Parse video type configuration (optional, with default fallback)
+            video_type_config = None
+            video_type_data = data.get('video_type')
+
+            if video_type_data and isinstance(video_type_data, dict):
+                try:
+                    video_type_str = video_type_data.get('type', 'short_drama')
+                    subtype_str = video_type_data.get('subtype', 'modern_drama')
+                    custom_description = video_type_data.get('description')
+
+                    # Validate type/subtype combination
+                    if validate_video_type_combination(video_type_str, subtype_str):
+                        video_type = VideoType(video_type_str)
+                        video_type_config = get_video_type_config(video_type, subtype_str)
+
+                        # Override description if custom one provided
+                        if custom_description:
+                            video_type_config.description = custom_description
+
+                        self.logger.info(
+                            f"ScriptParserAgent | Parsed video type config | "
+                            f"type={video_type_str} | subtype={subtype_str}"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"ScriptParserAgent | Invalid video type combination | "
+                            f"type={video_type_str} | subtype={subtype_str} | using_default=True"
+                        )
+                except Exception as e:
+                    self.logger.warning(
+                        f"ScriptParserAgent | Failed to parse video type config | "
+                        f"error={e} | using_default=True"
+                    )
+            else:
+                self.logger.debug("ScriptParserAgent | No video type config found, using default")
+
             # Create Script object
             script = Script(
                 title=title,
@@ -198,9 +235,21 @@ class ScriptParserAgent(BaseAgent):
                 description=description,
                 characters=characters,
                 scenes=scenes,
-                metadata=metadata
+                metadata=metadata,
+                video_type_config=video_type_config
             )
-            
+
+            # Log the final script configuration
+            if script.video_type_config:
+                self.logger.info(
+                    f"ScriptParserAgent | Script created with video type | "
+                    f"type={script.video_type_config.type.value} | "
+                    f"subtype={script.video_type_config.subtype} | "
+                    f"description={script.video_type_config.description[:50] if script.video_type_config.description else 'None'}"
+                )
+            else:
+                self.logger.warning("ScriptParserAgent | Script created WITHOUT video type config")
+
             return script
             
         except yaml.YAMLError as e:

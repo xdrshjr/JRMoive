@@ -41,18 +41,22 @@ class TempProjectManager:
         script: str,
         config: Optional[WorkflowConfig] = None,
         character_images: Optional[Dict[str, str]] = None,
-        scene_images: Optional[Dict[str, str]] = None
+        scene_images: Optional[Dict[str, str]] = None,
+        video_type: Optional[str] = None,
+        video_subtype: Optional[str] = None
     ) -> tuple[Path, Dict[str, str]]:
         """
         Create a temporary project structure
-        
+
         Args:
             task_id: Unique task identifier
             script: Script text content
             config: Workflow configuration
             character_images: Character name -> base64/url mapping
             scene_images: Scene ID -> base64/url mapping
-            
+            video_type: Video type (news_broadcast, anime, movie, short_drama)
+            video_subtype: Video subtype (varies by type)
+
         Returns:
             Tuple of (project_path, saved_character_images_dict)
             - project_path: Path to created project directory
@@ -116,7 +120,7 @@ class TempProjectManager:
         
         # Generate and save config
         config_path = project_dir / "config.yaml"
-        config_dict = self._generate_config_dict(task_id, config)
+        config_dict = self._generate_config_dict(task_id, config, video_type, video_subtype)
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
         logger.info(f"TempProjectManager | Saved config | path={config_path}")
@@ -181,30 +185,39 @@ class TempProjectManager:
     def _generate_config_dict(
         self,
         task_id: str,
-        config: Optional[WorkflowConfig]
+        config: Optional[WorkflowConfig],
+        video_type: Optional[str] = None,
+        video_subtype: Optional[str] = None
     ) -> Dict:
         """
         Generate project configuration dictionary
-        
+
         Args:
             task_id: Task identifier
             config: Workflow configuration
-            
+            video_type: Video type (news_broadcast, anime, movie, short_drama)
+            video_subtype: Video subtype (varies by type)
+
         Returns:
             Configuration dictionary for YAML
         """
         logger.debug(f"TempProjectManager | Generating config dict | task_id={task_id}")
-        
+
         # Use defaults if config not provided
         if config is None:
             config = WorkflowConfig()
-        
+
         config_dict = {
             "project": {
                 "name": f"workflow_{task_id}",
                 "description": f"Workflow-generated project for task {task_id}",
                 "author": "Workflow API",
                 "version": "1.0"
+            },
+            "video_type": {
+                "type": video_type or "short_drama",
+                "subtype": video_subtype or "modern_drama",
+                "description": None
             },
             "script": {
                 "file": "script.yaml",

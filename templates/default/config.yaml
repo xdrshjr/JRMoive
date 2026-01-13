@@ -8,6 +8,27 @@ project:
   author: "AI Scriptwriter"
   version: "1.0"
 
+# ==================== Video Type Configuration ====================
+# Configure the type and style of video to generate
+# This affects script generation, image prompts, and video generation
+video_type:
+  # Main video type:
+  # - "news_broadcast": Professional news broadcast style
+  # - "anime": Animated/anime style
+  # - "movie": Cinematic movie style
+  # - "short_drama": Short-form drama series
+  type: "short_drama"
+
+  # Subtype (varies by type):
+  # News Broadcast: "solo_anchor", "interview", "panel_discussion", "field_reporting"
+  # Anime: "ghibli_style", "american_style", "chibi_sd", "realistic_anime"
+  # Movie: "action", "drama", "sci_fi", "horror", "romance"
+  # Short Drama: "modern_drama", "period_drama", "comedy_sketch", "romantic_short"
+  subtype: "modern_drama"
+
+  # Optional: Custom description (auto-generated if not provided)
+  description: null
+
 # ==================== Script Configuration ====================
 script:
   file: "script.yaml"  # Script filename (relative to project folder)

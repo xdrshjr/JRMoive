@@ -268,13 +268,17 @@ class ImageGenerationAgent(BaseAgent):
         # 生成图片提示词 - 传递script_context以获得更好的上下文信息
         script_ctx = getattr(self, 'script_context', None)
         base_prompt = scene.to_image_prompt(self.character_dict, script_context=script_ctx)
-        
+
+        # 记录生成的提示词以便调试
+        self.logger.info(f"ImageGenerationAgent | Generated prompt for {scene.scene_id}: {base_prompt[:200]}...")
+
         if script_ctx:
             self.logger.debug(
                 f"ImageGenerationAgent | Scene prompt with context | "
                 f"scene={scene.scene_id} | "
                 f"has_script_context=True | "
-                f"script_title={script_ctx.title}"
+                f"script_title={script_ctx.title} | "
+                f"has_video_type_config={script_ctx.video_type_config is not None}"
             )
         else:
             self.logger.debug(

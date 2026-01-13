@@ -121,6 +121,8 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
                 character_images=request.character_images,
                 scene_images=request.scene_images,
                 config=request.config,
+                video_type=request.video_type,
+                video_subtype=request.video_subtype,
                 progress_callback=progress_callback,
                 base_url=base_url
             )

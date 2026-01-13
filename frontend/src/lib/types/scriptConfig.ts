@@ -4,6 +4,8 @@
  * Defines the configuration options available to users when generating scripts
  */
 
+import { VideoType, VideoSubtype } from './videoTypes';
+
 export type DramaGenre =
   | 'shuang_ju'      // 爽剧 (Power Fantasy)
   | 'comedy'         // 搞笑剧 (Comedy)
@@ -17,6 +19,10 @@ export type DramaGenre =
   | 'other';         // 其他 (Other)
 
 export interface ScriptGenerationConfig {
+  // Video type settings (NEW)
+  videoType?: VideoType;                // 视频类型
+  videoSubtype?: VideoSubtype;          // 视频子类型
+
   // Character settings
   characterCount: number;           // 人物个数 (1-10)
 

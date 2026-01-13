@@ -25,19 +25,41 @@ class APIException(Exception):
 
 class ServiceException(Exception):
     """Exception raised when an external service fails"""
-    
+
     def __init__(
         self,
         message: str,
         service_name: str,
         retryable: bool = True,
-        original_error: Optional[Exception] = None
+        original_error: Optional[Exception] = None,
+        error_code: str = "",
+        error_type: str = "",
+        stage: str = "",
+        api_response: Optional[Dict[str, Any]] = None
     ):
         super().__init__(message)
         self.message = message
         self.service_name = service_name
         self.retryable = retryable
         self.original_error = original_error
+        self.error_code = error_code  # API返回的错误码
+        self.error_type = error_type  # 错误类型分类（audio_filtered, content_policy等）
+        self.stage = stage  # 错误发生的阶段（image_generation, video_generation等）
+        self.api_response = api_response  # 完整的API响应
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式，用于API响应"""
+        return {
+            "type": self.__class__.__name__,
+            "message": self.message,
+            "service": self.service_name,
+            "retryable": self.retryable,
+            "error_code": self.error_code,
+            "error_type": self.error_type,
+            "stage": self.stage,
+            "api_response": self.api_response,
+            "original_error": str(self.original_error) if self.original_error else None
+        }
 
 
 class TaskNotFoundException(APIException):

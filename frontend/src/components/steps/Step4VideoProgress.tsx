@@ -31,7 +31,9 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentStage, setCurrentStage] = useState('Initializing');
   const [error, setError] = useState<string | null>(null);
-  
+  const [errorDetails, setErrorDetails] = useState<any>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
+
   // Use ref to prevent double execution in React StrictMode
   const hasStartedRef = useRef(false);
 
@@ -98,13 +100,22 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
     } catch (err) {
       addLog('error', 'QuickModeGeneration', 'Failed to start quick mode generation', err);
 
+      let errorMessage = 'An unexpected error occurred';
+      let details = null;
+
       if (err instanceof APIException) {
-        setError(`Failed to start quick mode: ${err.message}`);
+        errorMessage = `Failed to start quick mode: ${err.message}`;
+        details = {
+          code: err.code,
+          details: err.details,
+          retryable: err.retryable
+        };
       } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred');
+        errorMessage = err.message;
       }
+
+      setError(errorMessage);
+      setErrorDetails(details);
       setStatus('failed');
     }
   };
@@ -169,14 +180,23 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       pollTaskStatus(response.task_id, false);
     } catch (err) {
       addLog('error', 'WorkflowGeneration', 'Failed to start workflow generation', err);
-      
+
+      let errorMessage = 'An unexpected error occurred';
+      let details = null;
+
       if (err instanceof APIException) {
-        setError(`Failed to start workflow: ${err.message}`);
+        errorMessage = `Failed to start workflow: ${err.message}`;
+        details = {
+          code: err.code,
+          details: err.details,
+          retryable: err.retryable
+        };
       } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred');
+        errorMessage = err.message;
       }
+
+      setError(errorMessage);
+      setErrorDetails(details);
       setStatus('failed');
     }
   };
@@ -254,14 +274,23 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       }
     } catch (err) {
       addLog('error', 'WorkflowGeneration', 'Workflow generation failed', err);
-      
+
+      let errorMessage = 'An unexpected error occurred';
+      let details = null;
+
       if (err instanceof APIException) {
-        setError(`Workflow failed: ${err.message}`);
+        errorMessage = `Workflow failed: ${err.message}`;
+        details = {
+          code: err.code,
+          details: err.details,
+          retryable: err.retryable
+        };
       } else if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred');
+        errorMessage = err.message;
       }
+
+      setError(errorMessage);
+      setErrorDetails(details);
       setStatus('failed');
     }
   };
@@ -350,11 +379,103 @@ export const Step4VideoProgress: React.FC<Step4VideoProgressProps> = ({
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-apple-red rounded-apple-md p-4">
           <h4 className="text-apple-red font-semibold mb-2">Error</h4>
-          <p className="text-apple-red text-sm">{error}</p>
-          <div className="mt-4">
+          <p className="text-apple-red text-sm mb-3">{error}</p>
+
+          {/* Error Details */}
+          {errorDetails && (
+            <div className="mt-3">
+              <button
+                onClick={() => setShowErrorDetails(!showErrorDetails)}
+                className="text-apple-red text-sm underline hover:no-underline focus:outline-none"
+              >
+                {showErrorDetails ? '▼ Hide Details' : '▶ Show Details'}
+              </button>
+
+              {showErrorDetails && (
+                <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded border border-gray-300 dark:border-gray-600">
+                  <div className="space-y-2 text-sm font-mono">
+                    {errorDetails.code && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Error Code:</span>{' '}
+                        <span className="text-gray-900 dark:text-gray-100">{errorDetails.code}</span>
+                      </div>
+                    )}
+
+                    {errorDetails.details?.service && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Service:</span>{' '}
+                        <span className="text-gray-900 dark:text-gray-100">{errorDetails.details.service}</span>
+                      </div>
+                    )}
+
+                    {errorDetails.details?.stage && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Stage:</span>{' '}
+                        <span className="text-gray-900 dark:text-gray-100">{errorDetails.details.stage}</span>
+                      </div>
+                    )}
+
+                    {errorDetails.details?.error_type && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Error Type:</span>{' '}
+                        <span className="text-gray-900 dark:text-gray-100">{errorDetails.details.error_type}</span>
+                      </div>
+                    )}
+
+                    {errorDetails.details?.error_code && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">API Error Code:</span>{' '}
+                        <span className="text-gray-900 dark:text-gray-100">{errorDetails.details.error_code}</span>
+                      </div>
+                    )}
+
+                    {errorDetails.retryable !== undefined && (
+                      <div>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">Retryable:</span>{' '}
+                        <span className={errorDetails.retryable ? 'text-green-600' : 'text-red-600'}>
+                          {errorDetails.retryable ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                    )}
+
+                    {errorDetails.details?.api_response && (
+                      <div className="mt-3">
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">API Response:</span>
+                        <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-900 rounded text-xs overflow-x-auto">
+                          {JSON.stringify(errorDetails.details.api_response, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 flex gap-2">
             <Button variant="secondary" onClick={onCancel}>
               Go Back
             </Button>
+            {errorDetails?.retryable && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setError(null);
+                  setErrorDetails(null);
+                  setShowErrorDetails(false);
+                  setProgress(0);
+                  setStatus('pending');
+                  hasStartedRef.current = false;
+                  if (isQuickMode) {
+                    startQuickModeGeneration();
+                  } else {
+                    startWorkflowGeneration();
+                  }
+                }}
+              >
+                Retry
+              </Button>
+            )}
           </div>
         </div>
       )}

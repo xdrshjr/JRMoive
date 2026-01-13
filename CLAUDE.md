@@ -249,6 +249,14 @@ When creating new agents:
 - Include context dict when calling `error_handler.handle_error(e, context)`
 - Log errors with correlation_id for request tracing
 
+**Enhanced Error Handling (2025-01)**:
+- API services (Nano Banana Pro, Veo3) now capture complete error responses
+- `ServiceException` includes: error_code, error_type, stage, api_response, retryable flag
+- Task manager preserves full error context including traceback and service details
+- Frontend displays detailed error information with expandable details section
+- Errors show: service name, stage, error type, API error code, retryability, full API response
+- See `docs/ERROR_HANDLING_IMPROVEMENTS.md` for complete documentation
+
 ### Resource Management
 - Always call `await agent.close()` to cleanup resources
 - Use `async with` context managers where possible

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from config.settings import settings
 from utils.retry import async_retry
+from backend.core.exceptions import ServiceException
 import logging
 
 
@@ -187,9 +188,39 @@ class NanoBananaService:
             return normalized_result
 
         except httpx.HTTPStatusError as e:
-            self.logger.error(f"API request failed: {e.response.status_code}")
-            self.logger.error(f"Response: {e.response.text}")
-            raise
+            error_response = None
+            error_code = ""
+            error_message = f"API request failed with status {e.response.status_code}"
+
+            # 尝试解析错误响应
+            try:
+                error_response = e.response.json()
+                if isinstance(error_response, dict):
+                    # 提取错误信息（支持多种格式）
+                    error_code = error_response.get('error', {}).get('code', '') if isinstance(error_response.get('error'), dict) else error_response.get('code', '')
+                    error_msg = error_response.get('error', {}).get('message', '') if isinstance(error_response.get('error'), dict) else error_response.get('message', '')
+                    if error_msg:
+                        error_message = error_msg
+            except Exception:
+                # 如果无法解析JSON，使用原始文本
+                error_response = {"raw_text": e.response.text}
+
+            self.logger.error(f"Nano Banana API request failed: {e.response.status_code}")
+            self.logger.error(f"Error code: {error_code}")
+            self.logger.error(f"Error message: {error_message}")
+            self.logger.error(f"Response: {e.response.text[:500]}")
+
+            # 抛出增强的ServiceException
+            raise ServiceException(
+                message=error_message,
+                service_name="Nano Banana Pro",
+                retryable=e.response.status_code >= 500,  # 5xx错误可重试
+                original_error=e,
+                error_code=error_code,
+                error_type="image_generation_failed",
+                stage="image_generation",
+                api_response=error_response
+            )
 
     async def download_image(
         self,

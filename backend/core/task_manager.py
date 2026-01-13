@@ -8,9 +8,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Callable, List
 from enum import Enum
 import time
+import traceback
 
 from backend.core.models import TaskStatus, TaskInfo, TaskResult
-from backend.core.exceptions import TaskNotFoundException, TaskCancelledException, StorageException
+from backend.core.exceptions import TaskNotFoundException, TaskCancelledException, StorageException, ServiceException
 from backend.config import settings
 from backend.utils.logger import get_logger
 from backend.utils.helpers import generate_task_id
@@ -214,14 +215,34 @@ class TaskManager:
             
         except Exception as e:
             logger.exception(f"Task failed: {task_id} | error: {str(e)}")
+
+            # 构建详细的错误信息
+            error_info = {
+                "type": type(e).__name__,
+                "message": str(e),
+                "traceback": traceback.format_exc()
+            }
+
+            # 如果是ServiceException，提取额外的错误信息
+            if isinstance(e, ServiceException):
+                error_info.update({
+                    "service": e.service_name,
+                    "retryable": e.retryable,
+                    "error_code": e.error_code,
+                    "error_type": e.error_type,
+                    "stage": e.stage,
+                    "api_response": e.api_response,
+                    "original_error": str(e.original_error) if e.original_error else None
+                })
+                logger.error(f"Service error details | service={e.service_name} | "
+                           f"code={e.error_code} | type={e.error_type} | "
+                           f"stage={e.stage} | retryable={e.retryable}")
+
             await self._update_task_status(
                 task_id,
                 TaskStatus.FAILED,
                 message=str(e),
-                error={
-                    "type": type(e).__name__,
-                    "message": str(e)
-                }
+                error=error_info
             )
         
         finally:

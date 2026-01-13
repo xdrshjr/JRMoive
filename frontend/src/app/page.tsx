@@ -16,6 +16,13 @@ import { Character, Scene, GenerationMode, QuickModeScene } from '@/lib/types';
 import { VideoType, VideoSubtype } from '@/lib/types/videoTypes';
 import { logger } from '@/lib/logger';
 
+interface VideoContinuityConfig {
+  enableSceneContinuity: boolean;
+  continuityFrameIndex: number;
+  continuityReferenceWeight: number;
+  enableSmartContinuityJudge: boolean;
+}
+
 export default function Home() {
   // Mode state
   const [generationMode, setGenerationMode] = useState<GenerationMode>('full');
@@ -24,6 +31,12 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState(0); // Changed from 1 to 0
   const [videoType, setVideoType] = useState<VideoType | null>(null);
   const [videoSubtype, setVideoSubtype] = useState<VideoSubtype | null>(null);
+  const [continuityConfig, setContinuityConfig] = useState<VideoContinuityConfig>({
+    enableSceneContinuity: true,
+    continuityFrameIndex: -5,
+    continuityReferenceWeight: 0.5,
+    enableSmartContinuityJudge: true,
+  });
   const [userScript, setUserScript] = useState('');
   const [polishedScript, setPolishedScript] = useState('');
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -61,6 +74,12 @@ export default function Home() {
     setQuickStep(1);
     setVideoType(null);
     setVideoSubtype(null);
+    setContinuityConfig({
+      enableSceneContinuity: true,
+      continuityFrameIndex: -5,
+      continuityReferenceWeight: 0.5,
+      enableSmartContinuityJudge: true,
+    });
     setUserScript('');
     setPolishedScript('');
     setCharacters([]);
@@ -71,13 +90,19 @@ export default function Home() {
   };
 
   // Full mode handlers
-  const handleStep0Complete = (selectedVideoType: VideoType, selectedVideoSubtype: VideoSubtype) => {
+  const handleStep0Complete = (
+    selectedVideoType: VideoType,
+    selectedVideoSubtype: VideoSubtype,
+    selectedContinuityConfig: VideoContinuityConfig
+  ) => {
     logger.info('MainApp', 'Step 0 completed', {
       videoType: selectedVideoType,
       videoSubtype: selectedVideoSubtype,
+      continuityConfig: selectedContinuityConfig,
     });
     setVideoType(selectedVideoType);
     setVideoSubtype(selectedVideoSubtype);
+    setContinuityConfig(selectedContinuityConfig);
     setCurrentStep(1);
   };
 
@@ -142,6 +167,12 @@ export default function Home() {
     setCurrentStep(0);
     setVideoType(null);
     setVideoSubtype(null);
+    setContinuityConfig({
+      enableSceneContinuity: true,
+      continuityFrameIndex: -5,
+      continuityReferenceWeight: 0.5,
+      enableSmartContinuityJudge: true,
+    });
     setUserScript('');
     setPolishedScript('');
     setCharacters([]);
@@ -218,6 +249,7 @@ export default function Home() {
                   onNext={handleStep0Complete}
                   initialVideoType={videoType || undefined}
                   initialVideoSubtype={videoSubtype || undefined}
+                  initialContinuityConfig={continuityConfig}
                 />
               )}
 
@@ -259,6 +291,7 @@ export default function Home() {
                   scenes={scenes}
                   videoType={videoType || undefined}
                   videoSubtype={videoSubtype || undefined}
+                  continuityConfig={continuityConfig}
                   onComplete={handleStep4Complete}
                   onCancel={handleStep4Cancel}
                 />

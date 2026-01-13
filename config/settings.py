@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # 视频生成并发配置
     video_max_concurrent: int = 2  # 视频生成最大并发数 (1-5)
 
+    # 场景连续性配置
+    enable_scene_continuity: bool = True  # 是否启用场景间连续性处理
+    continuity_frame_index: int = -5  # 提取前一视频的帧位置（负数表示倒数，-5表示倒数第5帧）
+    continuity_reference_weight: float = 0.5  # 连续性参考图权重（0.0-1.0），平衡连贯性和创作自由度
+    enable_smart_continuity_judge: bool = True  # 是否启用智能连续性判断（使用LLM判断场景是否连续）
+
     # 角色一致性配置
     enable_character_references: bool = True  # 是否启用角色参考图生成
     character_reference_mode: Literal["single_multi_view", "multiple_single_view"] = "single_multi_view"  # 单张多视角 or 多张单视角

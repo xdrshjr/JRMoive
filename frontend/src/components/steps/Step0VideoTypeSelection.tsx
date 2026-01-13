@@ -14,23 +14,47 @@ import {
   getSubtypeDisplayName,
   getSubtypeDescription,
 } from '@/lib/types/videoTypes';
+import { ConfigPanel, ConfigRow, Checkbox, NumberInput, Select } from '@/components/ui/ConfigPanel';
+
+interface VideoContinuityConfig {
+  enableSceneContinuity: boolean;
+  continuityFrameIndex: number;
+  continuityReferenceWeight: number;
+  enableSmartContinuityJudge: boolean;
+}
 
 interface Step0VideoTypeSelectionProps {
-  onNext: (videoType: VideoType, videoSubtype: VideoSubtype) => void;
+  onNext: (
+    videoType: VideoType,
+    videoSubtype: VideoSubtype,
+    continuityConfig: VideoContinuityConfig
+  ) => void;
   initialVideoType?: VideoType;
   initialVideoSubtype?: VideoSubtype;
+  initialContinuityConfig?: VideoContinuityConfig;
 }
 
 export default function Step0VideoTypeSelection({
   onNext,
   initialVideoType,
   initialVideoSubtype,
+  initialContinuityConfig,
 }: Step0VideoTypeSelectionProps) {
   const [selectedType, setSelectedType] = useState<VideoType | null>(
     initialVideoType || null
   );
   const [selectedSubtype, setSelectedSubtype] = useState<string | null>(
     initialVideoSubtype || null
+  );
+
+  // Scene continuity configuration state
+  const [continuityConfig, setContinuityConfig] = useState<VideoContinuityConfig>(
+    initialContinuityConfig || {
+      enableSceneContinuity: true,
+      continuityFrameIndex: -5,
+      continuityReferenceWeight: 0.5,
+      enableSmartContinuityJudge: true,
+    }
   );
 
   const handleTypeSelect = (type: VideoType) => {
@@ -44,7 +68,7 @@ export default function Step0VideoTypeSelection({
 
   const handleContinue = () => {
     if (selectedType && selectedSubtype) {
-      onNext(selectedType, selectedSubtype as VideoSubtype);
+      onNext(selectedType, selectedSubtype as VideoSubtype, continuityConfig);
     }
   };
 
@@ -204,6 +228,123 @@ export default function Step0VideoTypeSelection({
               }
             )}
           </div>
+        </div>
+      )}
+
+      {/* Scene Continuity Configuration */}
+      {selectedType && selectedSubtype && (
+        <div className="space-y-4 animate-fadeIn">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+            3. 场景连续性配置
+          </h2>
+          <ConfigPanel
+            title="视频场景连贯性"
+            description="配置场景间的视觉连续性，提高视频流畅度和观看体验"
+          >
+            <Checkbox
+              label="启用场景连续性"
+              checked={continuityConfig.enableSceneContinuity}
+              onChange={(checked) =>
+                setContinuityConfig({ ...continuityConfig, enableSceneContinuity: checked })
+              }
+              description="使用前一场景的视频帧作为参考，提高场景间的视觉连贯性"
+            />
+
+            {continuityConfig.enableSceneContinuity && (
+              <>
+                <Checkbox
+                  label="启用智能场景判断"
+                  checked={continuityConfig.enableSmartContinuityJudge}
+                  onChange={(checked) =>
+                    setContinuityConfig({ ...continuityConfig, enableSmartContinuityJudge: checked })
+                  }
+                  description="使用LLM智能判断相邻场景是否连续，只在连续场景间使用参考帧"
+                />
+
+                <ConfigRow
+                  label="参考帧位置"
+                  description="从前一场景视频中提取哪一帧作为参考（负数表示倒数）"
+                >
+                  <Select
+                    value={continuityConfig.continuityFrameIndex.toString()}
+                    onChange={(value) =>
+                      setContinuityConfig({
+                        ...continuityConfig,
+                        continuityFrameIndex: parseInt(value),
+                      })
+                    }
+                    options={[
+                      { value: '-1', label: '最后一帧 (-1)', description: '使用视频的最后一帧' },
+                      { value: '-3', label: '倒数第3帧 (-3)', description: '避免淡出效果' },
+                      { value: '-5', label: '倒数第5帧 (-5) 推荐', description: '平衡稳定性和连续性' },
+                      { value: '-10', label: '倒数第10帧 (-10)', description: '更早的稳定帧' },
+                    ]}
+                    className="w-64"
+                  />
+                </ConfigRow>
+
+                <ConfigRow
+                  label="参考权重"
+                  description="参考帧对视频生成的影响程度（0.0-1.0）"
+                >
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={continuityConfig.continuityReferenceWeight}
+                      onChange={(e) =>
+                        setContinuityConfig({
+                          ...continuityConfig,
+                          continuityReferenceWeight: parseFloat(e.target.value),
+                        })
+                      }
+                      className="w-48"
+                    />
+                    <span className="text-sm font-mono text-gray-700 dark:text-gray-300 w-12">
+                      {continuityConfig.continuityReferenceWeight.toFixed(1)}
+                    </span>
+                  </div>
+                </ConfigRow>
+
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <svg
+                      className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    <div className="text-sm text-blue-800 dark:text-blue-200">
+                      <p className="font-semibold mb-1">配置说明：</p>
+                      <ul className="list-disc list-inside space-y-1 text-blue-700 dark:text-blue-300">
+                        <li>
+                          <strong>智能场景判断</strong>：LLM会分析场景的地点、时间、角色、剧情等，自动判断是否应该使用连续性
+                        </li>
+                        <li>
+                          <strong>参考权重 0.3</strong>：参考图影响较小，保持创作自由度
+                        </li>
+                        <li>
+                          <strong>参考权重 0.5</strong>：平衡连贯性和创作性（推荐）
+                        </li>
+                        <li>
+                          <strong>参考权重 0.7</strong>：强调连续性，适合高度连贯的场景
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </ConfigPanel>
         </div>
       )}
 

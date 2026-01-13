@@ -2,7 +2,7 @@
 import httpx
 import asyncio
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 
 from config.settings import settings
@@ -72,50 +72,75 @@ class Veo3Service:
     )
     async def image_to_video(
         self,
-        image_path: str,
+        image_path: Union[str, List[str]],
         duration: Optional[float] = None,
         fps: int = 30,
         resolution: str = "1920x1080",
         motion_strength: float = 0.5,
         camera_motion: Optional[str] = None,
+        reference_weight: float = 0.5,
         **kwargs
     ) -> Dict[str, Any]:
         """
         将图片转换为视频
 
         Args:
-            image_path: 图片文件路径
+            image_path: 图片文件路径（单张或多张列表）
             duration: 视频时长（秒，可选，默认None让模型自动决定）
             fps: 帧率
             resolution: 分辨率
             motion_strength: 运动强度（0.0-1.0）
             camera_motion: 摄像机运动类型（pan/tilt/zoom/static）
+            reference_weight: 参考图权重（0.0-1.0），用于多图片模式
             **kwargs: 其他API参数
 
         Returns:
             API响应，包含任务ID或视频URL
         """
+        # 处理单张或多张图片
+        image_paths = [image_path] if isinstance(image_path, str) else image_path
+
         # veo OpenAI 格式：使用 multipart/form-data 直接上传图片
-        self.logger.info(f"Generating video using OpenAI format (multipart) from: {image_path}")
+        if len(image_paths) == 1:
+            self.logger.info(f"Generating video using single image from: {image_paths[0]}")
+        else:
+            self.logger.info(f"Generating video using {len(image_paths)} images (continuity mode)")
+            self.logger.info(f"  - Base image: {image_paths[0]}")
+            self.logger.info(f"  - Reference image: {image_paths[1]}")
+            self.logger.info(f"  - Reference weight: {reference_weight}")
 
         # 构建 form data
-        with open(image_path, 'rb') as image_file:
-            files = {
-                'input_reference': (Path(image_path).name, image_file, 'image/png')
-            }
+        files = {}
+        file_handles = []
+
+        try:
+            # 打开所有图片文件
+            for idx, img_path in enumerate(image_paths):
+                file_handle = open(img_path, 'rb')
+                file_handles.append(file_handle)
+
+                if idx == 0:
+                    # 第一张图片作为主要参考
+                    files['input_reference'] = (Path(img_path).name, file_handle, 'image/png')
+                else:
+                    # 额外的参考图（用于场景连续性）
+                    files['additional_reference'] = (Path(img_path).name, file_handle, 'image/png')
 
             # 构建其他字段
-            # 注意：虽然使用 multipart/form-data，但某些 API 可能期望特定格式的字符串
             data = {
                 'model': self.model,
                 'prompt': kwargs.get('prompt', 'Generate video from this image'),
-                'size': kwargs.get('size', '1920x1080'),  # 使用实际分辨率而不是宽高比
-                'watermark': 'false'  # 字符串格式的布尔值
+                'size': kwargs.get('size', '1920x1080'),
+                'watermark': 'false'
             }
+
+            # 添加参考权重（仅在多图片模式下）
+            if len(image_paths) > 1:
+                data['reference_weight'] = str(reference_weight)
 
             # 只有在明确指定duration时才添加，否则让视频模型自己决定
             if duration is not None:
-                data['seconds'] = str(int(duration))  # 必须是整数字符串
+                data['seconds'] = str(int(duration))
                 self.logger.info(f"⚠️ Setting video duration to {duration}s (seconds={int(duration)})")
 
             self.logger.debug(f"Using model: {self.model}")
@@ -185,6 +210,14 @@ class Veo3Service:
                     stage="video_generation",
                     api_response=error_response
                 )
+
+        finally:
+            # 确保关闭所有文件句柄
+            for file_handle in file_handles:
+                try:
+                    file_handle.close()
+                except Exception as e:
+                    self.logger.warning(f"Failed to close file handle: {e}")
 
     async def _upload_image(self, image_path: str) -> str:
         """

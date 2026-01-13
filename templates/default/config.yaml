@@ -105,6 +105,13 @@ video:
   motion_strength: 0.6        # Camera motion strength (0.0-1.0)
   model: "veo_3_1"            # Video generation model
 
+  # Scene continuity settings
+  # Enable scene-to-scene continuity for smoother transitions
+  enable_scene_continuity: true          # Enable continuity processing
+  continuity_frame_index: -5             # Frame to extract from previous video (-5 = 5th from end)
+  continuity_reference_weight: 0.5       # Reference frame weight (0.0-1.0)
+  enable_smart_continuity_judge: true    # Use LLM to intelligently judge if scenes are continuous
+
 # ==================== Video Composition ====================
 composer:
   # Transition settings

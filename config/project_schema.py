@@ -81,6 +81,12 @@ class VideoConfig(BaseModel):
     motion_strength: float = Field(0.6, ge=0.0, le=1.0, description="Motion strength parameter")
     model: str = Field("veo_3_1", description="Video generation model")
 
+    # Scene continuity configuration
+    enable_scene_continuity: bool = Field(True, description="Enable scene-to-scene continuity")
+    continuity_frame_index: int = Field(-5, description="Frame index to extract from previous video (negative = from end)")
+    continuity_reference_weight: float = Field(0.5, ge=0.0, le=1.0, description="Reference frame weight for continuity")
+    enable_smart_continuity_judge: bool = Field(True, description="Enable LLM-based smart continuity judgment")
+
     @field_validator('resolution')
     @classmethod
     def validate_resolution(cls, v: str) -> str:

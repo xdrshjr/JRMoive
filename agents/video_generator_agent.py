@@ -6,6 +6,7 @@ from datetime import datetime
 
 from agents.base_agent import BaseAgent
 from services.veo3_service import Veo3Service, VideoGenerationError
+from services.scene_continuity_judge_service import SceneContinuityJudgeService
 from models.script_models import Scene, SubScene, CameraMovement
 from utils.concurrency import ConcurrencyLimiter
 from utils.prompt_optimizer import PromptOptimizer
@@ -38,10 +39,10 @@ class VideoGenerationAgent(BaseAgent):
 
         # 提示词优化器
         self.prompt_optimizer = PromptOptimizer()
-        
+
         # FFmpeg处理器（用于帧提取和视频拼接）
         self.ffmpeg_processor = FFmpegProcessor()
-        
+
         # 项目路径（用于加载自定义场景图）
         self.project_path: Optional[Path] = None
 
@@ -58,6 +59,37 @@ class VideoGenerationAgent(BaseAgent):
             'retry_backoff',
             settings.video_generation_retry_backoff
         )
+
+        # 场景连续性配置
+        self.enable_scene_continuity = self.config.get(
+            'enable_scene_continuity',
+            getattr(settings, 'enable_scene_continuity', True)
+        )
+        self.continuity_frame_index = self.config.get(
+            'continuity_frame_index',
+            getattr(settings, 'continuity_frame_index', -5)
+        )
+        self.continuity_reference_weight = self.config.get(
+            'continuity_reference_weight',
+            getattr(settings, 'continuity_reference_weight', 0.5)
+        )
+        self.enable_smart_continuity_judge = self.config.get(
+            'enable_smart_continuity_judge',
+            getattr(settings, 'enable_smart_continuity_judge', True)
+        )
+
+        # 场景连续性判断服务
+        self.continuity_judge = SceneContinuityJudgeService() if self.enable_smart_continuity_judge else None
+
+        # 判断结果缓存
+        self.continuity_judgments = {}
+
+        if self.enable_scene_continuity:
+            self.logger.info(
+                f"Scene continuity enabled: frame_index={self.continuity_frame_index}, "
+                f"reference_weight={self.continuity_reference_weight}, "
+                f"smart_judge={self.enable_smart_continuity_judge}"
+            )
     
     def set_project_path(self, project_path: Path):
         """
@@ -99,21 +131,80 @@ class VideoGenerationAgent(BaseAgent):
         self.scene_params = scene_params or {}
 
         try:
-            # 构建任务列表
-            tasks_data = []
-            for img_result, scene in zip(image_results, scenes):
-                tasks_data.append({
-                    'image_result': img_result,
-                    'scene': scene,
-                    'character_dict': character_dict
-                })
+            results = []
+            previous_video_path = None  # 跟踪前一个场景的视频路径
+            previous_scene = None  # 跟踪前一个场景对象
 
-            # 并发执行
-            results = await self.limiter.run_batch(
-                self._generate_video_clip,
-                tasks_data,
-                show_progress=True
-            )
+            # 如果启用连续性，顺序处理；否则并发处理
+            if self.enable_scene_continuity:
+                self.logger.info("Processing scenes sequentially for continuity")
+                for idx, (img_result, scene) in enumerate(zip(image_results, scenes)):
+                    self.logger.info(f"Processing scene {idx + 1}/{len(scenes)}: {scene.scene_id}")
+
+                    # 判断是否应该使用前一场景的参考帧
+                    should_use_reference = False
+                    if previous_video_path and previous_scene:
+                        if self.enable_smart_continuity_judge and self.continuity_judge:
+                            # 使用LLM智能判断
+                            judgment = await self._judge_scene_continuity(
+                                previous_scene,
+                                scene,
+                                character_dict
+                            )
+                            should_use_reference = judgment['should_use']
+                            self.logger.info(
+                                f"Scene continuity judgment for {scene.scene_id}: "
+                                f"should_use={should_use_reference}, "
+                                f"type={judgment['scene_type']}, "
+                                f"confidence={judgment['confidence']:.2f}, "
+                                f"reason={judgment['reason']}"
+                            )
+                        else:
+                            # 不使用智能判断，默认都使用连续性
+                            should_use_reference = True
+                            self.logger.info(
+                                f"Scene continuity for {scene.scene_id}: "
+                                f"using reference (smart judge disabled)"
+                            )
+
+                    task_data = {
+                        'image_result': img_result,
+                        'scene': scene,
+                        'character_dict': character_dict,
+                        'previous_video_path': previous_video_path if should_use_reference else None
+                    }
+
+                    result = await self._generate_video_clip(task_data)
+                    results.append(result)
+
+                    # 更新前一个视频路径和场景（仅在成功时）
+                    if result.get('success', False) and result.get('video_path'):
+                        previous_video_path = result['video_path']
+                        previous_scene = scene
+                        self.logger.debug(f"Updated previous_video_path: {previous_video_path}")
+
+                    # 调用进度回调
+                    if progress_callback:
+                        progress = (idx + 1) / len(scenes) * 100
+                        progress_callback(progress)
+            else:
+                # 原有的并发处理逻辑
+                self.logger.info("Processing scenes concurrently (continuity disabled)")
+                tasks_data = []
+                for img_result, scene in zip(image_results, scenes):
+                    tasks_data.append({
+                        'image_result': img_result,
+                        'scene': scene,
+                        'character_dict': character_dict,
+                        'previous_video_path': None  # 并发模式下不使用前一视频
+                    })
+
+                # 并发执行
+                results = await self.limiter.run_batch(
+                    self._generate_video_clip,
+                    tasks_data,
+                    show_progress=True
+                )
 
             # 统计成功和失败的场景
             success_count = sum(1 for r in results if r.get('success', False))
@@ -152,10 +243,10 @@ class VideoGenerationAgent(BaseAgent):
     async def _generate_video_clip(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         生成单个视频片段（带重试机制和智能提示词调整）
-        支持带子场景的场景生成
-        
+        支持带子场景的场景生成和场景连续性
+
         Args:
-            task_data: 包含image_result、scene和character_dict的字典
+            task_data: 包含image_result、scene、character_dict和previous_video_path的字典
 
         Returns:
             视频生成结果
@@ -163,6 +254,7 @@ class VideoGenerationAgent(BaseAgent):
         image_result = task_data['image_result']
         scene = task_data['scene']
         character_dict = task_data.get('character_dict')
+        previous_video_path = task_data.get('previous_video_path')
 
         # 检查是否有子场景
         if scene.sub_scenes:
@@ -170,35 +262,61 @@ class VideoGenerationAgent(BaseAgent):
             return await self._generate_scene_with_subscenes(
                 image_result,
                 scene,
-                character_dict
+                character_dict,
+                previous_video_path
             )
         else:
             # 普通场景，使用原有逻辑
             return await self._generate_simple_scene(
                 image_result,
                 scene,
-                character_dict
+                character_dict,
+                previous_video_path
             )
 
     async def _generate_simple_scene(
         self,
         image_result: Dict[str, Any],
         scene: Scene,
-        character_dict: Optional[Dict[str, Any]]
+        character_dict: Optional[Dict[str, Any]],
+        previous_video_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         生成简单场景（无子场景）
-        
+
         Args:
             image_result: 图片生成结果
             scene: 场景对象
             character_dict: 角色字典
-            
+            previous_video_path: 前一场景的视频路径（用于连续性）
+
         Returns:
             视频生成结果（包含success标志）
         """
         image_path = image_result['image_path']
         scene_id = scene.scene_id
+
+        # 提取参考帧（如果启用连续性且存在前一视频）
+        reference_frame_path = None
+        if self.enable_scene_continuity and previous_video_path:
+            try:
+                reference_frame_path = await self._extract_reference_frame(
+                    video_path=previous_video_path,
+                    frame_index=self.continuity_frame_index
+                )
+                self.logger.info(f"Scene {scene_id}: Using reference frame from previous scene")
+            except Exception as e:
+                self.logger.warning(
+                    f"Scene {scene_id}: Failed to extract reference frame: {e}. "
+                    f"Continuing without reference frame."
+                )
+                reference_frame_path = None
+
+        # 构建图片路径列表
+        if reference_frame_path:
+            image_paths = [image_path, reference_frame_path]
+        else:
+            image_paths = image_path  # 单张图片
 
         # 跟踪是否遇到音频过滤错误
         audio_filtered_error = False
@@ -207,7 +325,7 @@ class VideoGenerationAgent(BaseAgent):
         for attempt in range(self.max_retries + 1):
             try:
                 result = await self._generate_video_clip_once(
-                    image_path,
+                    image_paths,
                     scene,
                     scene_id,
                     character_dict,
@@ -219,7 +337,7 @@ class VideoGenerationAgent(BaseAgent):
                 result['scene_id'] = scene_id
                 self.logger.info(f"✓ Scene {scene_id} generated successfully")
                 return result
-                
+
             except VideoGenerationError as e:
                 # 检查是否是音频过滤错误
                 if e.error_type == 'audio_filtered':
@@ -265,7 +383,7 @@ class VideoGenerationAgent(BaseAgent):
                         'error_type': 'max_retries_exceeded',
                         'video_path': None
                     }
-                    
+
             except Exception as e:
                 # 其他异常（网络错误等）也进行重试
                 if attempt < self.max_retries:
@@ -293,22 +411,24 @@ class VideoGenerationAgent(BaseAgent):
         self,
         image_result: Dict[str, Any],
         scene: Scene,
-        character_dict: Optional[Dict[str, Any]]
+        character_dict: Optional[Dict[str, Any]],
+        previous_video_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         生成包含子场景的场景视频
-        
+
         流程:
         1. 从图片生成基础场景视频
         2. 从基础视频提取指定帧
         3. 使用提取的帧生成所有子场景视频
         4. 拼接基础视频和所有子场景视频
-        
+
         Args:
             image_result: 图片生成结果
             scene: 场景对象（包含子场景）
             character_dict: 角色字典
-            
+            previous_video_path: 前一场景的视频路径（用于连续性）
+
         Returns:
             最终拼接后的视频生成结果
         """
@@ -316,16 +436,17 @@ class VideoGenerationAgent(BaseAgent):
         self.logger.info(
             f"Generating hierarchical scene {scene_id} with {len(scene.sub_scenes)} sub-scenes"
         )
-        
+
         try:
             # Step 1: 生成基础场景视频
             self.logger.info(f"Step 1/4: Generating base scene video for {scene_id}")
             base_video_result = await self._generate_simple_scene(
                 image_result,
                 scene,
-                character_dict
+                character_dict,
+                previous_video_path  # 传递前一视频路径
             )
-            
+
             # 检查基础场景是否生成成功
             if not base_video_result.get('success', False):
                 self.logger.error(f"Base scene generation failed for {scene_id}")
@@ -336,7 +457,7 @@ class VideoGenerationAgent(BaseAgent):
                     'error_type': 'base_scene_failed',
                     'video_path': None
                 }
-            
+
             base_video_path = base_video_result['video_path']
             self.logger.info(f"Base scene video generated: {base_video_path}")
             
@@ -588,9 +709,77 @@ class VideoGenerationAgent(BaseAgent):
             self.logger.error(f"Failed to copy custom base image: {e}")
             return None
 
+    async def _extract_reference_frame(
+        self,
+        video_path: str,
+        frame_index: int = -5
+    ) -> str:
+        """
+        从视频中提取参考帧
+
+        Args:
+            video_path: 视频文件路径
+            frame_index: 帧索引（负数表示倒数）
+
+        Returns:
+            提取的帧图片路径
+        """
+        output_dir = Path(self.output_dir) / "temp" / "reference_frames"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        video_name = Path(video_path).stem
+        frame_path = output_dir / f"{video_name}_frame_{abs(frame_index)}.png"
+
+        # 使用 FFmpegProcessor 提取帧
+        self.ffmpeg_processor.extract_frame(
+            video_path=video_path,
+            frame_index=frame_index,
+            output_path=str(frame_path)
+        )
+
+        self.logger.info(f"Extracted reference frame: {frame_path}")
+        return str(frame_path)
+
+    async def _judge_scene_continuity(
+        self,
+        previous_scene: Scene,
+        current_scene: Scene,
+        character_dict: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        判断当前场景是否应该使用前一场景的参考帧
+
+        Args:
+            previous_scene: 前一个场景
+            current_scene: 当前场景
+            character_dict: 角色字典
+
+        Returns:
+            判断结果字典
+        """
+        # 生成缓存键
+        cache_key = f"{previous_scene.scene_id}_{current_scene.scene_id}"
+
+        # 检查缓存
+        if cache_key in self.continuity_judgments:
+            self.logger.debug(f"Using cached continuity judgment for {cache_key}")
+            return self.continuity_judgments[cache_key]
+
+        # 调用判断服务
+        judgment = await self.continuity_judge.should_use_continuity(
+            previous_scene,
+            current_scene,
+            character_dict
+        )
+
+        # 缓存结果
+        self.continuity_judgments[cache_key] = judgment
+
+        return judgment
+
     async def _generate_video_clip_once(
         self,
-        image_path: str,
+        image_path,  # Union[str, List[str]]
         scene: Scene,
         scene_id: str,
         character_dict: Optional[Dict[str, Any]],
@@ -601,7 +790,7 @@ class VideoGenerationAgent(BaseAgent):
         执行一次视频片段生成
 
         Args:
-            image_path: 图片路径
+            image_path: 图片路径（单张或多张列表）
             scene: 场景对象
             scene_id: 场景ID
             character_dict: 角色字典
@@ -638,6 +827,10 @@ class VideoGenerationAgent(BaseAgent):
             'camera_motion': self._map_camera_motion(scene.camera_movement),
             'prompt': optimized_video_prompt  # 使用优化后的提示词
         }
+
+        # 添加参考权重（如果使用多图片）
+        if isinstance(image_path, list) and len(image_path) > 1:
+            video_config['reference_weight'] = self.continuity_reference_weight
 
         # Check if scene_params are provided (for quick mode)
         if hasattr(self, 'scene_params') and scene_id in self.scene_params:

@@ -38,9 +38,62 @@ async def lifespan(app: FastAPI):
     logger.info(f"Video Service: Veo3 ({settings.veo3_model})")
     logger.info(f"Task Storage: {settings.task_storage_backend}")
     logger.info("=" * 60)
-    
+
+    # Create projects directory
+    projects_dir = Path("backend/projects")
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Projects directory: {projects_dir.absolute()}")
+
+    # Initialize project manager and register callback with task manager
+    from backend.core.project_manager import get_project_manager
+    from backend.core.task_manager import get_task_manager
+    from backend.core.models import TaskStatus
+
+    project_manager = get_project_manager()
+    task_manager = get_task_manager()
+
+    async def project_status_callback(task_id: str, status: TaskStatus, progress: int, result: any, error: any):
+        """Callback to sync project status with task status"""
+        try:
+            # Find project by task_id
+            project = project_manager.get_project_by_task_id(task_id)
+            if not project:
+                return
+
+            # Sync status and progress
+            project_manager.sync_task_status(project.id, status, progress)
+
+            # Update project with result data if completed
+            if status == TaskStatus.COMPLETED and result:
+                video_path = result.get("video_path")
+                duration = result.get("duration")
+                scene_count = result.get("scene_count")
+                character_count = result.get("character_count")
+
+                project_manager.update_project_from_task_result(
+                    project.id,
+                    video_path=video_path,
+                    duration=duration,
+                    scene_count=scene_count,
+                    character_count=character_count
+                )
+
+            # Update project with error message if failed
+            elif status == TaskStatus.FAILED and error:
+                error_message = error.get("message", str(error))
+                project_manager.update_project_from_task_result(
+                    project.id,
+                    error_message=error_message
+                )
+
+        except Exception as e:
+            logger.error(f"Error in project status callback: {e}")
+
+    task_manager.register_status_callback(project_status_callback)
+    logger.info("Project status callback registered")
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down API server...")
     logger.info("Cleanup completed")

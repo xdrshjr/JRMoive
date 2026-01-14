@@ -98,12 +98,32 @@ class TaskStore:
 
 class TaskManager:
     """Manager for async task execution and tracking"""
-    
+
     def __init__(self):
         self.store = TaskStore()
         self._running_tasks: Dict[str, asyncio.Task] = {}
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_tasks)
+        self._status_callbacks: List[Callable] = []  # Callbacks for status updates
         logger.info(f"TaskManager initialized (max concurrent: {settings.max_concurrent_tasks})")
+
+    def register_status_callback(self, callback: Callable):
+        """Register a callback to be called when task status changes
+
+        Args:
+            callback: Async function with signature (task_id, status, progress, result, error)
+        """
+        self._status_callbacks.append(callback)
+        logger.debug(f"Registered status callback: {callback.__name__}")
+
+    def unregister_status_callback(self, callback: Callable):
+        """Unregister a status callback
+
+        Args:
+            callback: Callback function to remove
+        """
+        if callback in self._status_callbacks:
+            self._status_callbacks.remove(callback)
+            logger.debug(f"Unregistered status callback: {callback.__name__}")
     
     async def start(self):
         """Start the task manager"""
@@ -260,7 +280,7 @@ class TaskManager:
         error: Any = None
     ):
         """Update task status
-        
+
         Args:
             task_id: Task identifier
             status: New status
@@ -273,26 +293,40 @@ class TaskManager:
         if not task_data:
             logger.warning(f"Attempted to update non-existent task: {task_id}")
             return
-        
+
         task_data["status"] = status
         task_data["updated_at"] = datetime.utcnow()
-        
+
         if progress is not None:
             task_data["progress"] = progress
-        
+
         if message is not None:
             task_data["message"] = message
-        
+
         if result is not None:
             task_data["result"] = result
-        
+
         if error is not None:
             task_data["error"] = error
-        
+
         if status == TaskStatus.COMPLETED:
             task_data["completed_at"] = datetime.utcnow()
-        
+
         await self.store.save(task_id, task_data)
+
+        # Call registered callbacks
+        if self._status_callbacks:
+            for callback in self._status_callbacks:
+                try:
+                    await callback(
+                        task_id=task_id,
+                        status=status,
+                        progress=task_data["progress"],
+                        result=result,
+                        error=error
+                    )
+                except Exception as e:
+                    logger.error(f"Error in status callback {callback.__name__}: {e}")
     
     async def get_task_status(self, task_id: str) -> TaskInfo:
         """Get current task status

@@ -1,11 +1,12 @@
 import React from 'react';
+import Link from 'next/link';
 
 export const Header: React.FC = () => {
   return (
     <header className="glass-effect border-b border-text-tertiary sticky top-0 z-50">
       <div className="px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
             <div className="w-8 h-8 bg-gradient-to-br from-gray-700 to-gray-900 rounded-apple-md flex items-center justify-center">
               <svg
                 className="w-5 h-5 text-white"
@@ -29,7 +30,7 @@ export const Header: React.FC = () => {
                 Create stunning videos with AI
               </p>
             </div>
-          </div>
+          </Link>
 
           <div className="flex items-center gap-4">
             <a

@@ -1,0 +1,19 @@
+{
+  "id": "proj_5f1fee8b72a5",
+  "name": "dsfdsf",
+  "description": "dsfsdffd",
+  "video_type": "news_broadcast",
+  "mode": "full",
+  "task_id": null,
+  "status": "pending",
+  "progress": 0,
+  "thumbnail_path": null,
+  "video_path": null,
+  "created_at": "2026-01-14 11:52:42.997257",
+  "updated_at": "2026-01-14 11:52:42.998266",
+  "duration": null,
+  "scene_count": null,
+  "character_count": null,
+  "error_message": null,
+  "metadata": {}
+}

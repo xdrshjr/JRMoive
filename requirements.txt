@@ -19,6 +19,7 @@ openai==1.3.0
 
 # Async utilities
 aiofiles==23.2.1
+filelock==3.13.1
 
 # Data processing
 pandas==2.1.3

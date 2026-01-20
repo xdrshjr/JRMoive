@@ -43,9 +43,10 @@ def setup_logging(log_level: str = None):
         rotation=settings.log_rotation,
         retention=settings.log_retention,
         compression="zip",
-        enqueue=True
+        enqueue=True,
+        catch=True  # Prevent rotation errors from crashing the app
     )
-    
+
     # Error log file (ERROR and above)
     logger.add(
         log_dir / "error.log",
@@ -56,7 +57,8 @@ def setup_logging(log_level: str = None):
         compression="zip",
         enqueue=True,
         backtrace=True,
-        diagnose=True
+        diagnose=True,
+        catch=True  # Prevent rotation errors from crashing the app
     )
     
     # Debug log file (DEBUG and above) - only if log level is DEBUG
@@ -68,7 +70,8 @@ def setup_logging(log_level: str = None):
             rotation=settings.log_rotation,
             retention=settings.log_retention,
             compression="zip",
-            enqueue=True
+            enqueue=True,
+            catch=True  # Prevent rotation errors from crashing the app
         )
     
     logger.info("Logging system initialized")

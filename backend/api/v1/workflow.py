@@ -173,69 +173,91 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
                 if status == TaskStatus.COMPLETED and result:
                     logger.info(f"WorkflowAPI | Task completed, updating project metadata | project_id={project_id}")
 
-                    # Extract metadata from result
-                    video_path = result.get('video_path')
-                    duration = result.get('duration')
-                    scene_count = result.get('scene_count')
-                    character_count = result.get('character_count')
+                    # Extract metadata from result (ensure result is dict)
+                    if isinstance(result, dict):
+                        video_path = result.get('video_path')
+                        duration = result.get('duration')
+                        scene_count = result.get('scene_count')
+                        character_count = result.get('character_count')
 
-                    logger.debug(
-                        f"WorkflowAPI | Extracted result metadata | "
-                        f"video_path={video_path} | "
-                        f"duration={duration} | "
-                        f"scene_count={scene_count} | "
-                        f"character_count={character_count}"
-                    )
-
-                    # Update project with result data
-                    success = project_manager.update_project_from_task_result(
-                        project_id=project_id,
-                        video_path=video_path,
-                        duration=duration,
-                        scene_count=scene_count,
-                        character_count=character_count
-                    )
-
-                    if success:
-                        logger.info(
-                            f"WorkflowAPI | Project metadata updated successfully | "
-                            f"project_id={project_id} | "
-                            f"video_path={video_path}"
+                        logger.debug(
+                            f"WorkflowAPI | Extracted result metadata | "
+                            f"video_path={video_path} | "
+                            f"duration={duration} | "
+                            f"scene_count={scene_count} | "
+                            f"character_count={character_count}"
                         )
+
+                        # Update project with result data
+                        success = project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            video_path=video_path,
+                            duration=duration,
+                            scene_count=scene_count,
+                            character_count=character_count
+                        )
+
+                        if success:
+                            logger.info(
+                                f"WorkflowAPI | Project metadata updated successfully | "
+                                f"project_id={project_id} | "
+                                f"video_path={video_path}"
+                            )
+                        else:
+                            logger.error(
+                                f"WorkflowAPI | Failed to update project metadata | "
+                                f"project_id={project_id}"
+                            )
                     else:
-                        logger.error(
-                            f"WorkflowAPI | Failed to update project metadata | "
-                            f"project_id={project_id}"
+                        logger.warning(
+                            f"WorkflowAPI | Result is not a dict, skipping metadata update | "
+                            f"project_id={project_id} | "
+                            f"result_type={type(result).__name__}"
                         )
 
                 # Handle FAILED status - sync error message
                 elif status == TaskStatus.FAILED and error:
-                    logger.warning(
-                        f"WorkflowAPI | Task failed, syncing error to project | "
-                        f"project_id={project_id} | "
-                        f"error_type={error.get('type', 'unknown')}"
-                    )
-
-                    # Extract error message
-                    error_message = error.get('message', 'Unknown error')
-                    if error.get('service'):
-                        error_message = f"[{error['service']}] {error_message}"
-
-                    # Update project with error
-                    success = project_manager.update_project_from_task_result(
-                        project_id=project_id,
-                        error_message=error_message
-                    )
-
-                    if success:
-                        logger.info(
-                            f"WorkflowAPI | Error message synced to project | "
-                            f"project_id={project_id}"
+                    # Extract error message (ensure error is dict)
+                    if isinstance(error, dict):
+                        error_type = error.get('type', 'unknown')
+                        logger.warning(
+                            f"WorkflowAPI | Task failed, syncing error to project | "
+                            f"project_id={project_id} | "
+                            f"error_type={error_type}"
                         )
+
+                        error_message = error.get('message', 'Unknown error')
+                        if error.get('service'):
+                            error_message = f"[{error['service']}] {error_message}"
+
+                        # Update project with error
+                        success = project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            error_message=error_message
+                        )
+
+                        if success:
+                            logger.info(
+                                f"WorkflowAPI | Error message synced to project | "
+                                f"project_id={project_id}"
+                            )
+                        else:
+                            logger.error(
+                                f"WorkflowAPI | Failed to sync error message | "
+                                f"project_id={project_id}"
+                            )
                     else:
-                        logger.error(
-                            f"WorkflowAPI | Failed to sync error message | "
-                            f"project_id={project_id}"
+                        # Fallback: use str representation if error is not a dict
+                        error_message = str(error) if error else 'Unknown error'
+                        logger.warning(
+                            f"WorkflowAPI | Error is not a dict, using string representation | "
+                            f"project_id={project_id} | "
+                            f"error_type={type(error).__name__}"
+                        )
+
+                        project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            error_message=error_message
                         )
 
             except Exception as e:
@@ -442,49 +464,73 @@ async def generate_quick_workflow(request: QuickModeWorkflowRequest, http_reques
                 if status == TaskStatus.COMPLETED and result:
                     logger.info(f"WorkflowAPI | Quick mode completed, updating metadata | project_id={project_id}")
 
-                    video_path = result.get('video_path')
-                    duration = result.get('duration')
-                    scene_count = result.get('scene_count')
+                    # Extract metadata from result (ensure result is dict)
+                    if isinstance(result, dict):
+                        video_path = result.get('video_path')
+                        duration = result.get('duration')
+                        scene_count = result.get('scene_count')
 
-                    logger.debug(
-                        f"WorkflowAPI | Quick mode result | "
-                        f"video_path={video_path} | "
-                        f"duration={duration} | "
-                        f"scene_count={scene_count}"
-                    )
+                        logger.debug(
+                            f"WorkflowAPI | Quick mode result | "
+                            f"video_path={video_path} | "
+                            f"duration={duration} | "
+                            f"scene_count={scene_count}"
+                        )
 
-                    success = project_manager.update_project_from_task_result(
-                        project_id=project_id,
-                        video_path=video_path,
-                        duration=duration,
-                        scene_count=scene_count,
-                        character_count=0  # Quick mode doesn't have characters
-                    )
+                        success = project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            video_path=video_path,
+                            duration=duration,
+                            scene_count=scene_count,
+                            character_count=0  # Quick mode doesn't have characters
+                        )
 
-                    if success:
-                        logger.info(f"WorkflowAPI | Quick mode metadata updated | project_id={project_id}")
+                        if success:
+                            logger.info(f"WorkflowAPI | Quick mode metadata updated | project_id={project_id}")
+                        else:
+                            logger.error(f"WorkflowAPI | Failed to update quick mode metadata | project_id={project_id}")
                     else:
-                        logger.error(f"WorkflowAPI | Failed to update quick mode metadata | project_id={project_id}")
+                        logger.warning(
+                            f"WorkflowAPI | Quick mode result is not a dict | "
+                            f"project_id={project_id} | "
+                            f"result_type={type(result).__name__}"
+                        )
 
                 # Handle FAILED status
                 elif status == TaskStatus.FAILED and error:
-                    logger.warning(
-                        f"WorkflowAPI | Quick mode failed | "
-                        f"project_id={project_id} | "
-                        f"error={error.get('message', 'unknown')}"
-                    )
+                    # Extract error message (ensure error is dict)
+                    if isinstance(error, dict):
+                        error_type = error.get('message', 'unknown')
+                        logger.warning(
+                            f"WorkflowAPI | Quick mode failed | "
+                            f"project_id={project_id} | "
+                            f"error={error_type}"
+                        )
 
-                    error_message = error.get('message', 'Unknown error')
-                    if error.get('service'):
-                        error_message = f"[{error['service']}] {error_message}"
+                        error_message = error.get('message', 'Unknown error')
+                        if error.get('service'):
+                            error_message = f"[{error['service']}] {error_message}"
 
-                    success = project_manager.update_project_from_task_result(
-                        project_id=project_id,
-                        error_message=error_message
-                    )
+                        success = project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            error_message=error_message
+                        )
 
-                    if success:
-                        logger.info(f"WorkflowAPI | Quick mode error synced | project_id={project_id}")
+                        if success:
+                            logger.info(f"WorkflowAPI | Quick mode error synced | project_id={project_id}")
+                    else:
+                        # Fallback: use str representation if error is not a dict
+                        error_message = str(error) if error else 'Unknown error'
+                        logger.warning(
+                            f"WorkflowAPI | Quick mode error is not a dict | "
+                            f"project_id={project_id} | "
+                            f"error_type={type(error).__name__}"
+                        )
+
+                        project_manager.update_project_from_task_result(
+                            project_id=project_id,
+                            error_message=error_message
+                        )
 
             except Exception as e:
                 logger.error(

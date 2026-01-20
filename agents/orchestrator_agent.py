@@ -286,18 +286,86 @@ class DramaGenerationOrchestrator(BaseAgent):
             # 检查是否有失败的场景
             failed_scenes = [r for r in video_results if not r.get('success', False)]
             success_scenes = [r for r in video_results if r.get('success', False)]
-            
+
             if failed_scenes:
-                failed_ids = ', '.join([r.get('scene_id', 'unknown') for r in failed_scenes])
-                error_message = f"Video generation completed with errors: {len(success_scenes)} succeeded, {len(failed_scenes)} failed (scenes: {failed_ids})"
-                self.logger.warning(error_message)
+                # 收集详细的失败信息
+                failed_details = []
+                for failed in failed_scenes:
+                    scene_id = failed.get('scene_id', 'unknown')
+                    error_type = failed.get('error_type', 'unknown')
+                    error_msg = failed.get('error', 'Unknown error')
+                    failed_details.append({
+                        'scene_id': scene_id,
+                        'error_type': error_type,
+                        'error': error_msg
+                    })
+
+                # 生成详细的错误报告
+                failed_ids = ', '.join([f.get('scene_id', 'unknown') for f in failed_scenes])
+                error_summary = f"Video generation completed with errors: {len(success_scenes)} succeeded, {len(failed_scenes)} failed (scenes: {failed_ids})"
+
+                # 添加详细错误信息到日志
+                self.logger.warning(error_summary)
+                for detail in failed_details:
+                    self.logger.error(
+                        f"  - Scene {detail['scene_id']}: {detail['error_type']} - {detail['error']}"
+                    )
+
                 await self._update_progress(
                     75,
-                    error_message
+                    error_summary
                 )
-                # 如果所有场景都失败了，抛出异常
+
+                # 如果所有场景都失败了，抛出详细的异常
                 if len(success_scenes) == 0:
-                    raise Exception("All video scenes failed to generate")
+                    error_types = {}
+                    for detail in failed_details:
+                        error_type = detail['error_type']
+                        error_types[error_type] = error_types.get(error_type, 0) + 1
+
+                    error_type_summary = ', '.join([f"{count} {etype}" for etype, count in error_types.items()])
+
+                    detailed_message = (
+                        f"All video scenes failed to generate. "
+                        f"Error types: {error_type_summary}. "
+                        f"\nFailed scenes:\n" +
+                        '\n'.join([f"  - {d['scene_id']}: {d['error']}" for d in failed_details[:5]])  # Show first 5
+                    )
+
+                    if len(failed_details) > 5:
+                        detailed_message += f"\n  ... and {len(failed_details) - 5} more"
+
+                    raise Exception(detailed_message)
+
+                # 检查成功率是否达到最小要求（如果配置了）
+                min_success_rate = self.config.get('min_success_rate', 0.0)  # Default: allow any success rate
+                success_rate = len(success_scenes) / len(video_results)
+
+                if success_rate < min_success_rate:
+                    error_types = {}
+                    for detail in failed_details:
+                        error_type = detail['error_type']
+                        error_types[error_type] = error_types.get(error_type, 0) + 1
+
+                    error_type_summary = ', '.join([f"{count} {etype}" for etype, count in error_types.items()])
+
+                    detailed_message = (
+                        f"Video generation success rate ({success_rate:.1%}) is below minimum required ({min_success_rate:.1%}). "
+                        f"Error types: {error_type_summary}. "
+                        f"\nFailed scenes:\n" +
+                        '\n'.join([f"  - {d['scene_id']}: {d['error']}" for d in failed_details[:5]])
+                    )
+
+                    if len(failed_details) > 5:
+                        detailed_message += f"\n  ... and {len(failed_details) - 5} more"
+
+                    raise Exception(detailed_message)
+
+                # 继续处理成功的场景，但记录警告
+                self.logger.warning(
+                    f"Continuing with {len(success_scenes)} successful scenes "
+                    f"(success rate: {success_rate:.1%})"
+                )
             else:
                 await self._update_progress(
                     75,

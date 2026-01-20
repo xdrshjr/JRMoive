@@ -5,6 +5,7 @@ Provides endpoints for full workflow video generation pipeline.
 from fastapi import APIRouter, HTTPException, status, Request
 from fastapi.responses import FileResponse
 from pathlib import Path
+from typing import Any
 import os
 
 from backend.core.models import (
@@ -13,10 +14,16 @@ from backend.core.models import (
     TaskStatus,
     QuickModeWorkflowRequest
 )
+from backend.models.project_models import (
+    CreateProjectRequest,
+    VideoType,
+    GenerationMode
+)
 from backend.core.workflow_service import get_workflow_service
 from backend.core.quick_mode_service import get_quick_mode_service
 from backend.utils.asset_manager import get_asset_manager
 from backend.core.task_manager import get_task_manager
+from backend.core.project_manager import get_project_manager
 from backend.core.exceptions import TaskNotFoundException
 from backend.config import settings
 from backend.utils.logger import get_logger
@@ -75,7 +82,7 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
     """
     # Determine mode
     mode = "with_images" if (request.character_images or request.scene_images) else "full_pipeline"
-    
+
     logger.info(
         f"WorkflowAPI | Workflow generation request | "
         f"mode={mode} | "
@@ -83,19 +90,168 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
         f"char_images={len(request.character_images) if request.character_images else 0} | "
         f"scene_images={len(request.scene_images) if request.scene_images else 0}"
     )
-    
+
     try:
         # Get base URL from request
         base_url = str(http_request.base_url).rstrip('/')
-        
-        # Get task manager first to generate task_id
+
+        # Get managers
         task_manager = get_task_manager()
-        
+        project_manager = get_project_manager()
+
+        # Step 1: Create Project entity first
+        # This ensures the project exists before task execution begins
+        logger.info("WorkflowAPI | Creating project entity before task submission")
+
+        # Determine video type from request
+        video_type_enum = VideoType.SHORT_DRAMA  # Default
+        if request.video_type:
+            try:
+                video_type_enum = VideoType(request.video_type)
+            except ValueError:
+                logger.warning(f"WorkflowAPI | Invalid video_type: {request.video_type}, using default")
+
+        project_create_request = CreateProjectRequest(
+            name=f"Video Project {request.video_type or 'default'}",
+            description=f"Generated from workflow API ({mode} mode)",
+            video_type=video_type_enum,
+            mode=GenerationMode.FULL
+        )
+
+        project = project_manager.create_project(project_create_request)
+        project_id = project.id
+
+        logger.info(
+            f"WorkflowAPI | Project created | "
+            f"project_id={project_id} | "
+            f"name={project.name} | "
+            f"video_type={project.video_type} | "
+            f"status={project.status}"
+        )
+
         # We need to capture the task_id in a closure
         # Since task_manager generates the ID during submit_task,
         # we'll create a holder for it
         workflow_task_id = None
-        
+
+        # Step 2: Define status synchronization callback
+        # This callback will be called whenever the task status changes
+        async def sync_task_to_project(task_id: str, status: TaskStatus, progress: int, result: Any, error: Any):
+            """
+            Synchronize task status to project entity.
+
+            This ensures the project status stays in sync with the task status,
+            so the frontend can display the correct state.
+            """
+            try:
+                # Only sync if this is our task
+                if task_id != workflow_task_id:
+                    return
+
+                logger.debug(
+                    f"WorkflowAPI | Status callback triggered | "
+                    f"task_id={task_id} | "
+                    f"project_id={project_id} | "
+                    f"status={status} | "
+                    f"progress={progress}"
+                )
+
+                # Sync basic status and progress
+                success = project_manager.sync_task_status(project_id, status, progress)
+                if not success:
+                    logger.warning(f"WorkflowAPI | Failed to sync status | project_id={project_id} | task_id={task_id}")
+                    return
+
+                logger.info(
+                    f"WorkflowAPI | Status synced to project | "
+                    f"project_id={project_id} | "
+                    f"status={status} | "
+                    f"progress={progress}"
+                )
+
+                # Handle COMPLETED status - update video metadata
+                if status == TaskStatus.COMPLETED and result:
+                    logger.info(f"WorkflowAPI | Task completed, updating project metadata | project_id={project_id}")
+
+                    # Extract metadata from result
+                    video_path = result.get('video_path')
+                    duration = result.get('duration')
+                    scene_count = result.get('scene_count')
+                    character_count = result.get('character_count')
+
+                    logger.debug(
+                        f"WorkflowAPI | Extracted result metadata | "
+                        f"video_path={video_path} | "
+                        f"duration={duration} | "
+                        f"scene_count={scene_count} | "
+                        f"character_count={character_count}"
+                    )
+
+                    # Update project with result data
+                    success = project_manager.update_project_from_task_result(
+                        project_id=project_id,
+                        video_path=video_path,
+                        duration=duration,
+                        scene_count=scene_count,
+                        character_count=character_count
+                    )
+
+                    if success:
+                        logger.info(
+                            f"WorkflowAPI | Project metadata updated successfully | "
+                            f"project_id={project_id} | "
+                            f"video_path={video_path}"
+                        )
+                    else:
+                        logger.error(
+                            f"WorkflowAPI | Failed to update project metadata | "
+                            f"project_id={project_id}"
+                        )
+
+                # Handle FAILED status - sync error message
+                elif status == TaskStatus.FAILED and error:
+                    logger.warning(
+                        f"WorkflowAPI | Task failed, syncing error to project | "
+                        f"project_id={project_id} | "
+                        f"error_type={error.get('type', 'unknown')}"
+                    )
+
+                    # Extract error message
+                    error_message = error.get('message', 'Unknown error')
+                    if error.get('service'):
+                        error_message = f"[{error['service']}] {error_message}"
+
+                    # Update project with error
+                    success = project_manager.update_project_from_task_result(
+                        project_id=project_id,
+                        error_message=error_message
+                    )
+
+                    if success:
+                        logger.info(
+                            f"WorkflowAPI | Error message synced to project | "
+                            f"project_id={project_id}"
+                        )
+                    else:
+                        logger.error(
+                            f"WorkflowAPI | Failed to sync error message | "
+                            f"project_id={project_id}"
+                        )
+
+            except Exception as e:
+                # Don't let callback errors crash the main workflow
+                logger.error(
+                    f"WorkflowAPI | Error in status callback | "
+                    f"project_id={project_id} | "
+                    f"task_id={task_id} | "
+                    f"error={e}",
+                    exc_info=True
+                )
+
+        # Step 3: Register the callback with task manager
+        task_manager.register_status_callback(sync_task_to_project)
+        logger.info(f"WorkflowAPI | Registered status callback for project {project_id}")
+
         # Define workflow task
         async def workflow_task():
             # Use the task_id that was set after submission
@@ -133,16 +289,26 @@ async def generate_workflow(request: WorkflowGenerationRequest, http_request: Re
             workflow_task,
             task_type="workflow"
         )
-        
+
         # Set the task_id for the closure
         workflow_task_id = task_id
-        
-        logger.info(f"WorkflowAPI | Workflow task submitted | task_id={task_id} | mode={mode}")
-        
+
+        # Step 4: Update project with task_id association
+        # This links the project to the task for tracking
+        project.task_id = task_id
+        project_manager._write_project_file(project)
+
+        logger.info(
+            f"WorkflowAPI | Workflow task submitted | "
+            f"task_id={task_id} | "
+            f"project_id={project_id} | "
+            f"mode={mode}"
+        )
+
         return WorkflowGenerationResponse(
             task_id=task_id,
             status=TaskStatus.PENDING,
-            message=f"Workflow generation task submitted (mode: {mode}). Poll /api/v1/tasks/{task_id} for status."
+            message=f"Workflow generation task submitted (mode: {mode}). Project ID: {project_id}. Poll /api/v1/tasks/{task_id} for status."
         )
         
     except Exception as e:
@@ -215,11 +381,122 @@ async def generate_quick_workflow(request: QuickModeWorkflowRequest, http_reques
         # Get base URL from request
         base_url = str(http_request.base_url).rstrip('/')
 
-        # Get task manager
+        # Get managers
         task_manager = get_task_manager()
+        project_manager = get_project_manager()
+
+        # Step 1: Create Project entity for quick mode
+        logger.info("WorkflowAPI | Creating project entity for quick mode before task submission")
+
+        project_create_request = CreateProjectRequest(
+            name=f"Quick Mode Video ({len(request.scenes)} scenes)",
+            description=f"Generated from quick mode workflow API",
+            video_type=VideoType.SHORT_DRAMA,  # Default for quick mode
+            mode=GenerationMode.QUICK
+        )
+
+        project = project_manager.create_project(project_create_request)
+        project_id = project.id
+
+        logger.info(
+            f"WorkflowAPI | Quick mode project created | "
+            f"project_id={project_id} | "
+            f"name={project.name} | "
+            f"scene_count={len(request.scenes)} | "
+            f"status={project.status}"
+        )
 
         # Task ID holder
         workflow_task_id = None
+
+        # Step 2: Define status synchronization callback for quick mode
+        async def sync_quick_task_to_project(task_id: str, status: TaskStatus, progress: int, result: Any, error: Any):
+            """Synchronize quick mode task status to project entity."""
+            try:
+                # Only sync if this is our task
+                if task_id != workflow_task_id:
+                    return
+
+                logger.debug(
+                    f"WorkflowAPI | Quick mode status callback | "
+                    f"task_id={task_id} | "
+                    f"project_id={project_id} | "
+                    f"status={status} | "
+                    f"progress={progress}"
+                )
+
+                # Sync basic status and progress
+                success = project_manager.sync_task_status(project_id, status, progress)
+                if not success:
+                    logger.warning(f"WorkflowAPI | Failed to sync quick mode status | project_id={project_id}")
+                    return
+
+                logger.info(
+                    f"WorkflowAPI | Quick mode status synced | "
+                    f"project_id={project_id} | "
+                    f"status={status} | "
+                    f"progress={progress}"
+                )
+
+                # Handle COMPLETED status
+                if status == TaskStatus.COMPLETED and result:
+                    logger.info(f"WorkflowAPI | Quick mode completed, updating metadata | project_id={project_id}")
+
+                    video_path = result.get('video_path')
+                    duration = result.get('duration')
+                    scene_count = result.get('scene_count')
+
+                    logger.debug(
+                        f"WorkflowAPI | Quick mode result | "
+                        f"video_path={video_path} | "
+                        f"duration={duration} | "
+                        f"scene_count={scene_count}"
+                    )
+
+                    success = project_manager.update_project_from_task_result(
+                        project_id=project_id,
+                        video_path=video_path,
+                        duration=duration,
+                        scene_count=scene_count,
+                        character_count=0  # Quick mode doesn't have characters
+                    )
+
+                    if success:
+                        logger.info(f"WorkflowAPI | Quick mode metadata updated | project_id={project_id}")
+                    else:
+                        logger.error(f"WorkflowAPI | Failed to update quick mode metadata | project_id={project_id}")
+
+                # Handle FAILED status
+                elif status == TaskStatus.FAILED and error:
+                    logger.warning(
+                        f"WorkflowAPI | Quick mode failed | "
+                        f"project_id={project_id} | "
+                        f"error={error.get('message', 'unknown')}"
+                    )
+
+                    error_message = error.get('message', 'Unknown error')
+                    if error.get('service'):
+                        error_message = f"[{error['service']}] {error_message}"
+
+                    success = project_manager.update_project_from_task_result(
+                        project_id=project_id,
+                        error_message=error_message
+                    )
+
+                    if success:
+                        logger.info(f"WorkflowAPI | Quick mode error synced | project_id={project_id}")
+
+            except Exception as e:
+                logger.error(
+                    f"WorkflowAPI | Error in quick mode callback | "
+                    f"project_id={project_id} | "
+                    f"error={e}",
+                    exc_info=True
+                )
+
+        # Step 3: Register callback
+        task_manager.register_status_callback(sync_quick_task_to_project)
+        logger.info(f"WorkflowAPI | Registered quick mode callback for project {project_id}")
 
         # Define quick mode workflow task
         async def quick_workflow_task():
@@ -258,12 +535,21 @@ async def generate_quick_workflow(request: QuickModeWorkflowRequest, http_reques
         # Set task_id for closure
         workflow_task_id = task_id
 
-        logger.info(f"WorkflowAPI | Quick mode task submitted | task_id={task_id} | scene_count={len(request.scenes)}")
+        # Step 4: Update project with task_id association
+        project.task_id = task_id
+        project_manager._write_project_file(project)
+
+        logger.info(
+            f"WorkflowAPI | Quick mode task submitted | "
+            f"task_id={task_id} | "
+            f"project_id={project_id} | "
+            f"scene_count={len(request.scenes)}"
+        )
 
         return WorkflowGenerationResponse(
             task_id=task_id,
             status=TaskStatus.PENDING,
-            message=f"Quick mode workflow task submitted ({len(request.scenes)} scenes). Poll /api/v1/tasks/{task_id} for status."
+            message=f"Quick mode workflow task submitted ({len(request.scenes)} scenes). Project ID: {project_id}. Poll /api/v1/tasks/{task_id} for status."
         )
 
     except Exception as e:

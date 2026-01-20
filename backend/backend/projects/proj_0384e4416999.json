@@ -1,0 +1,19 @@
+{
+  "id": "proj_0384e4416999",
+  "name": "gfsg",
+  "description": "dfgdg",
+  "video_type": "anime",
+  "mode": "full",
+  "task_id": null,
+  "status": "pending",
+  "progress": 0,
+  "thumbnail_path": null,
+  "video_path": null,
+  "created_at": "2026-01-20 16:10:20.439441",
+  "updated_at": "2026-01-20 16:10:20.439441",
+  "duration": null,
+  "scene_count": null,
+  "character_count": null,
+  "error_message": null,
+  "metadata": {}
+}

@@ -5,7 +5,9 @@ from pathlib import Path
 from datetime import datetime
 
 from agents.base_agent import BaseAgent
+from services.video_service_factory import VideoServiceFactory
 from services.veo3_service import Veo3Service, VideoGenerationError
+from services.sora2_service import Sora2Service
 from services.scene_continuity_judge_service import SceneContinuityJudgeService
 from models.script_models import Scene, SubScene, CameraMovement
 from utils.concurrency import ConcurrencyLimiter
@@ -28,14 +30,35 @@ class VideoGenerationAgent(BaseAgent):
         self.output_dir = output_dir or Path("./output/videos")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.service = Veo3Service()
         self.logger = logging.getLogger(__name__)
 
+        # 从config中获取服务类型（优先级：config > settings）
+        service_type = self.config.get('video_service_type', None)  # None表示使用settings默认值
+
+        # 获取服务配置覆盖（如果config中有自定义配置）
+        service_config = self.config.get('video_service_config', {})
+
+        # 使用工厂创建服务
+        self.service = VideoServiceFactory.create_service(
+            service_type=service_type,
+            config_override=service_config
+        )
+
+        # 确定实际使用的服务类型
+        actual_service_type = service_type or settings.video_service_type
+        service_class_name = type(self.service).__name__
+
         # 并发限制 - 优先使用config中的配置，其次使用settings中的默认值
-        # Veo3生成较慢，建议降低并发数
+        # 视频生成较慢，建议降低并发数
         max_concurrent = self.config.get('max_concurrent', settings.video_max_concurrent)
         self.limiter = ConcurrencyLimiter(max_concurrent)
-        self.logger.info(f"VideoGenerationAgent initialized with max_concurrent={max_concurrent}")
+
+        # 日志记录
+        self.logger.info(
+            f"VideoGenerationAgent initialized with service: {actual_service_type} ({service_class_name}), "
+            f"model: {self.service.model}, max_concurrent: {max_concurrent}"
+        )
+        self.logger.debug(f"Service base_url: {self.service.base_url}")
 
         # 提示词优化器
         self.prompt_optimizer = PromptOptimizer()
@@ -636,8 +659,44 @@ class VideoGenerationAgent(BaseAgent):
         
         if sub_scene.duration is not None:
             video_config['duration'] = sub_scene.duration
-        
-        # 调用Veo3 API生成子场景视频
+
+        # 适配不同服务的参数（子场景也需要适配）
+        if isinstance(self.service, Sora2Service):
+            # Sora2特定参数适配
+            self.logger.debug(f"Adapting sub-scene parameters for Sora2 service")
+
+            # 1. 时长适配
+            if 'duration' in video_config:
+                original_duration = video_config['duration']
+                allowed_durations = Sora2Service.SUPPORTED_DURATIONS
+                sora_duration = min(allowed_durations, key=lambda x: abs(x - original_duration))
+
+                if abs(sora_duration - original_duration) > 0.5:
+                    self.logger.warning(
+                        f"Sub-scene duration {original_duration}s adjusted to {sora_duration}s (Sora2 constraint)"
+                    )
+                video_config['duration'] = sora_duration
+
+            # 2. 分辨率参数转换
+            if 'resolution' in video_config:
+                resolution = video_config.pop('resolution')
+                if 'size' not in video_config:
+                    video_config['size'] = resolution if 'x' in resolution.lower() else self.service.default_size
+
+            # 3. 添加Sora2特有参数
+            style = self.config.get('style') or getattr(self.service, 'default_style', None)
+            if style:
+                video_config['style'] = style
+
+            video_config['watermark'] = getattr(self.service, 'watermark', False)
+            video_config['private'] = getattr(self.service, 'private', False)
+
+            # 4. 移除不支持的参数
+            for param in ['motion_strength', 'camera_motion', 'fps']:
+                if param in video_config:
+                    video_config.pop(param)
+
+        # 调用视频生成服务API生成子场景视频
         api_result = await self.service.image_to_video(
             image_path=image_path_to_use,
             **video_config
@@ -857,7 +916,62 @@ class VideoGenerationAgent(BaseAgent):
         elif scene.duration is not None:
             video_config['duration'] = scene.duration
 
-        # 调用Veo3 API生成视频
+        # 适配不同服务的参数
+        if isinstance(self.service, Sora2Service):
+            # Sora2特定参数适配
+            self.logger.debug(f"Adapting parameters for Sora2 service")
+
+            # 1. 时长适配：Sora2只支持4, 8, 12秒（基础模式）
+            if 'duration' in video_config:
+                original_duration = video_config['duration']
+                allowed_durations = Sora2Service.SUPPORTED_DURATIONS
+                # 找到最接近的支持时长
+                sora_duration = min(allowed_durations, key=lambda x: abs(x - original_duration))
+
+                if abs(sora_duration - original_duration) > 0.5:
+                    self.logger.warning(
+                        f"Duration {original_duration}s adjusted to {sora_duration}s (Sora2 constraint: {allowed_durations})"
+                    )
+                video_config['duration'] = sora_duration
+
+            # 2. 分辨率参数：Sora2使用'size'而不是'resolution'
+            if 'resolution' in video_config:
+                # 将resolution转换为size
+                resolution = video_config.pop('resolution')
+                # 如果没有自定义size，使用分辨率或默认值
+                if 'size' not in video_config:
+                    # 尝试将resolution格式转换为size格式（如果格式相同）
+                    video_config['size'] = resolution if 'x' in resolution.lower() else self.service.default_size
+                    self.logger.debug(f"Converted resolution={resolution} to size={video_config['size']}")
+
+            # 3. 添加Sora2特有参数
+            # 如果config中指定了style，使用它
+            style = self.config.get('style') or getattr(self.service, 'default_style', None)
+            if style:
+                video_config['style'] = style
+                self.logger.debug(f"Using Sora2 style: {style}")
+
+            # watermark和private参数
+            video_config['watermark'] = getattr(self.service, 'watermark', False)
+            video_config['private'] = getattr(self.service, 'private', False)
+
+            # 4. 移除Sora2不支持的参数
+            unsupported_params = ['motion_strength', 'camera_motion', 'fps']
+            for param in unsupported_params:
+                if param in video_config:
+                    removed_value = video_config.pop(param)
+                    self.logger.debug(f"Removed unsupported Sora2 parameter: {param}={removed_value}")
+
+            # 日志记录最终参数
+            self.logger.info(
+                f"Sora2 video generation params: duration={video_config.get('duration')}s, "
+                f"size={video_config.get('size')}, style={video_config.get('style', 'none')}"
+            )
+        else:
+            # Veo3参数（保持现有逻辑）
+            self.logger.debug(f"Using Veo3 service parameters (no adaptation needed)")
+
+        # 调用视频生成服务API
         api_result = await self.service.image_to_video(
             image_path=image_path,
             **video_config
@@ -905,5 +1019,10 @@ class VideoGenerationAgent(BaseAgent):
 
     async def close(self):
         """关闭资源"""
+        service_name = type(self.service).__name__
+        self.logger.info(f"Closing VideoGenerationAgent resources, service: {service_name}")
+
         await self.service.close()
         await self.prompt_optimizer.close()
+
+        self.logger.info(f"VideoGenerationAgent resources closed successfully")

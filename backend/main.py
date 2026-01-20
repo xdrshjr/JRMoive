@@ -35,7 +35,23 @@ async def lifespan(app: FastAPI):
     logger.info(f"Server: {settings.host}:{settings.port}")
     logger.info(f"Log Level: {settings.log_level}")
     logger.info(f"Image Service: {settings.image_service_type}")
-    logger.info(f"Video Service: Veo3 ({settings.veo3_model})")
+
+    # Log video service configuration based on selected type
+    if settings.video_service_type == "veo3":
+        logger.info(f"Video Service: Veo3 (model={settings.veo3_model})")
+        logger.debug(f"  - Veo3 Base URL: {settings.veo3_base_url}")
+        logger.debug(f"  - Veo3 Endpoint: {settings.veo3_endpoint}")
+    elif settings.video_service_type == "sora2":
+        logger.info(f"Video Service: Sora2 (model={settings.sora2_model})")
+        logger.debug(f"  - Sora2 Base URL: {settings.sora2_base_url}")
+        logger.debug(f"  - Sora2 Endpoint: {settings.sora2_endpoint}")
+        logger.debug(f"  - Sora2 Default Size: {settings.sora2_default_size}")
+        logger.debug(f"  - Sora2 Default Duration: {settings.sora2_default_duration}s")
+        if settings.sora2_default_style:
+            logger.debug(f"  - Sora2 Default Style: {settings.sora2_default_style}")
+    else:
+        logger.warning(f"Unknown video service type: {settings.video_service_type}")
+
     logger.info(f"Task Storage: {settings.task_storage_backend}")
     logger.info("=" * 60)
 
@@ -222,7 +238,15 @@ if __name__ == "__main__":
     logger.info(f"Log Level: {log_level}")
     logger.info(f"Auto-reload: {args.reload}")
     logger.info(f"Image Service: {settings.image_service_type}")
-    logger.info(f"Video Service: Veo3 ({settings.veo3_model})")
+
+    # Log video service configuration based on selected type
+    if settings.video_service_type == "veo3":
+        logger.info(f"Video Service: Veo3 (model={settings.veo3_model})")
+    elif settings.video_service_type == "sora2":
+        logger.info(f"Video Service: Sora2 (model={settings.sora2_model})")
+    else:
+        logger.warning(f"Unknown video service type: {settings.video_service_type}")
+
     logger.info("=" * 60)
     
     uvicorn.run(

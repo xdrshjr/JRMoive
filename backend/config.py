@@ -16,13 +16,13 @@ class BackendSettings(BaseSettings):
     api_version: str = "1.0.0"
     api_description: str = """
     Comprehensive API for AI-powered image and video generation.
-    
+
     Features:
-    - 🎨 Multiple image generation services (Doubao, NanoBanana, Midjourney)
-    - 🎥 Video generation from images (Veo3)
-    - 🤖 LLM-powered prompt optimization
-    - 📊 Async task management with polling
-    - 🔄 OpenAI-compatible endpoints
+    - Image generation services (Doubao, NanoBanana, Midjourney)
+    - Video generation from images (Veo3, Sora2)
+    - LLM-powered prompt optimization
+    - Async task management with polling
+    - OpenAI-compatible endpoints
     """
     
     # ==================== LLM Configuration ====================
@@ -62,12 +62,28 @@ class BackendSettings(BaseSettings):
     midjourney_upscale_index: int = 1
     
     # ==================== Video Service Configuration ====================
+    # Video service selection
+    video_service_type: Literal["veo3", "sora2"] = "veo3"
+
+    # Veo3 Video Generation Service
     veo3_api_key: str = ""
     veo3_base_url: str = "https://api.kuai.host"
     veo3_endpoint: str = "/v1/videos"
     veo3_model: str = "veo_3_1"
     veo3_skip_upload: bool = True
-    
+
+    # Sora2 Video Generation Service
+    sora2_api_key: str = ""
+    sora2_base_url: str = "https://api.kuai.host"
+    sora2_endpoint: str = "/v1/videos"
+    sora2_model: str = "sora-2"
+    sora2_default_size: str = "1280x720"
+    sora2_default_duration: int = 8
+    sora2_default_style: Optional[str] = None
+    sora2_watermark: bool = False
+    sora2_private: bool = False
+
+    # Video generation retry configuration
     video_generation_max_retries: int = 3
     video_generation_retry_delay: float = 5.0
     video_generation_retry_backoff: float = 2.0

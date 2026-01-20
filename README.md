@@ -6,7 +6,7 @@
 
 - 🎬 自动剧本解析与分镜设计
 - 🖼️ AI驱动的分镜图片生成（Nano Banana Pro）
-- 🎥 图片到视频的智能转换（Veo3）
+- 🎥 图片到视频的智能转换（Veo3 / Sora2，可配置切换）
 - ✂️ 自动视频合成与后期处理
 - 👤 角色一致性参考图生成（支持加载/自动生成）
 - 🧠 **LLM角色一致性判断**（多候选图片评分选优）
@@ -40,7 +40,7 @@
 - **DramaGenerationOrchestrator**: 主控协调器，管理整体工作流
 - **ScriptParserAgent**: 解析文本剧本，生成结构化分镜脚本
 - **ImageGenerationAgent**: 调用Nano Banana Pro API生成分镜图片（支持多候选图片并发生成）
-- **VideoGenerationAgent**: 调用Veo3 API将图片转换为视频片段
+- **VideoGenerationAgent**: 调用Veo3或Sora2 API将图片转换为视频片段（支持动态切换）
 - **VideoComposerAgent**: 拼接视频片段并进行后期处理
 
 **角色一致性判断**（可选）：
@@ -98,7 +98,19 @@ cp .env.example .env
 ```bash
 # 必需的API密钥
 NANO_BANANA_API_KEY=your_nano_banana_api_key_here
+
+# 视频服务选择（veo3 或 sora2）
+VIDEO_SERVICE_TYPE=veo3
+
+# Veo3 视频生成服务
 VEO3_API_KEY=your_veo3_api_key_here
+
+# Sora2 视频生成服务（可选，如需使用Sora2）
+SORA2_API_KEY=your_sora2_api_key_here
+SORA2_MODEL=sora-2  # sora-2 或 sora-2-pro
+SORA2_DEFAULT_SIZE=1280x720
+SORA2_DEFAULT_DURATION=8
+SORA2_DEFAULT_STYLE=  # 可选: thanksgiving, comic, news, selfie, nostalgic, anime
 
 # 可选的API密钥
 DOUBAO_API_KEY=your_doubao_api_key_here  # 用于剧本优化
@@ -303,6 +315,8 @@ ai-movie-agent-guide/
 ├── services/                        # 外部API封装
 │   ├── nano_banana_service.py      # Nano Banana API
 │   ├── veo3_service.py             # Veo3 API
+│   ├── sora2_service.py            # Sora2 API
+│   ├── video_service_factory.py    # 视频服务工厂
 │   └── doubao_service.py           # Doubao API
 │
 ├── utils/                           # 共享工具（CLI）
@@ -413,7 +427,15 @@ image:
 
 # 视频生成配置
 video:
-  service: "veo3"
+  # 服务选择: veo3 或 sora2（可选，默认使用环境变量配置）
+  # service_type: sora2
+
+  # 自定义服务配置（可选）
+  # service_config:
+  #   model: sora-2-pro
+  #   default_duration: 12
+  #   default_style: anime
+
   duration: 5
   fps: 24
   max_concurrent: 2  # 视频生成最大并发数 (1-5)，推荐2-3
@@ -530,7 +552,7 @@ JUDGE_TEMPERATURE=0.3  # LLM温度参数（0.0-1.0）
 
 ## 成本提示
 
-- Nano Banana Pro和Veo3都是按使用量计费的API服务
+- Nano Banana Pro、Veo3和Sora2都是按使用量计费的API服务
 - 建议在正式使用前先阅读官方定价文档
 - 开发阶段可使用较低分辨率和较短时长进行测试
 - 预估成本：生成一个5分钟短剧约需调用API 20-30次
@@ -662,9 +684,37 @@ npm run format  # 需要在package.json中配置
 - **Tailwind CSS 3.4**: 样式框架
 - **js-yaml**: YAML解析
 
+### 视频生成服务
+
+系统支持多种视频生成服务，可通过配置切换：
+
+#### Veo3（默认）
+- 高质量图片转视频
+- 支持任意时长（1-30秒）
+- 支持自定义motion strength和camera motion
+
+#### Sora2（新增）
+- OpenAI Sora2模型
+- 支持多种风格（anime, comic, nostalgic等）
+- 支持角色一致性（character_url参数）
+- 支持故事板模式（多镜头连续生成）
+- 时长限制：4/8/12秒（基础模式）或10/15/25秒（故事板模式）
+
+**配置切换**:
+```bash
+# .env
+VIDEO_SERVICE_TYPE=sora2  # 或 veo3
+SORA2_API_KEY=sk-YOUR_KEY_HERE
+```
+
+详细文档：
+- [Sora2集成指南](docs/dev-plan/01-sora-dev/SORA2_INTEGRATION_GUIDE.md)
+- [Sora2 API参考](docs/dev-plan/01-sora-dev/SORA2_API_REFERENCE.md)
+
 ### 外部服务
 - **Nano Banana Pro**: AI图片生成
-- **Veo3**: AI视频生成
+- **Veo3**: AI视频生成（默认）
+- **Sora2**: AI视频生成（可选，OpenAI格式）
 - **Doubao (火山引擎方舟)**: LLM服务（剧本优化、角色一致性判断）
 
 ## 贡献指南

@@ -9,7 +9,7 @@ AI短剧自动化生成系统 (AI Drama Automation System) - A multi-agent archi
 1. **CLI Interface**: Direct command-line access for project management and video generation
 2. **Web Interface**: FastAPI backend + Next.js frontend for browser-based workflows
 
-Both interfaces share the same core video generation pipeline, which integrates Nano Banana Pro (image generation), Veo3 (video generation), and optional LLM services for character consistency judging.
+Both interfaces share the same core video generation pipeline, which integrates Nano Banana Pro (image generation), Veo3/Sora2 (video generation with runtime selection), and optional LLM services for character consistency judging.
 
 ## Core Commands
 
@@ -203,7 +203,7 @@ The core video generation pipeline uses specialized agents that collaborate:
 1. **DramaGenerationOrchestrator** (`agents/orchestrator_agent.py`) - Main coordinator that orchestrates the entire workflow
 2. **ScriptParserAgent** (`agents/script_parser_agent.py`) - Parses text scripts into structured Scene objects
 3. **ImageGenerationAgent** (`agents/image_generator_agent.py`) - Generates storyboard images using Nano Banana Pro API
-4. **VideoGenerationAgent** (`agents/video_generator_agent.py`) - Converts images to video clips using Veo3 API
+4. **VideoGenerationAgent** (`agents/video_generator_agent.py`) - Converts images to video clips using Veo3 or Sora2 API (runtime selectable via VideoServiceFactory)
 5. **VideoComposerAgent** (`agents/video_composer_agent.py`) - Composes final video with transitions, BGM, and effects
 
 ### Key Design Patterns
@@ -256,6 +256,18 @@ The core video generation pipeline uses specialized agents that collaborate:
 - Async video generation API client
 - Image upload and async task polling
 - Maps camera movements to motion strength parameters
+
+**Sora2 Service** (`services/sora2_service.py`):
+- Async video generation API client (OpenAI format)
+- Supports multiple resolutions and styles
+- Character consistency via character_url parameter
+- Storyboard mode for multi-shot videos
+- Retry logic via `@async_retry` decorator
+
+**Video Service Factory** (`services/video_service_factory.py`):
+- Factory pattern for creating video services
+- Runtime service selection based on config
+- Config override support for custom parameters
 
 **Configuration** (`config/settings.py`):
 - Uses `pydantic-settings` for environment-based config
@@ -351,8 +363,9 @@ Expected script format (see `examples/sample_scripts/programmer_day.txt`):
 
 ### API Integration Points
 - **Nano Banana Pro**: Synchronous polling for image generation completion
-- **Veo3**: Async task submission + polling for video generation status
-- Both services implement retry logic for transient failures
+- **Veo3**: Async task submission + polling for video generation status (default service)
+- **Sora2**: Async task submission + polling for video generation status (alternative service, OpenAI format)
+- All services implement retry logic for transient failures
 
 ### Testing Strategy
 - Use `pytest.fixture` for reusable test data (e.g., `sample_scenes`)
@@ -378,7 +391,7 @@ When creating new agents:
 - Log errors with correlation_id for request tracing
 
 **Enhanced Error Handling (2025-01)**:
-- API services (Nano Banana Pro, Veo3) capture complete error responses
+- API services (Nano Banana Pro, Veo3, Sora2) capture complete error responses
 - `ServiceException` includes: error_code, error_type, stage, api_response, retryable flag
 - Task manager preserves full error context including traceback and service details
 - Frontend displays detailed error information with expandable details section
@@ -492,7 +505,13 @@ Key files demonstrate working implementation:
 
 ### External API Services
 - **Nano Banana Pro** - Image generation (requires API key in `NANO_BANANA_API_KEY`)
-- **Veo3** - Video generation (requires API key in `VEO3_API_KEY`)
+- **Veo3** - Video generation (default, requires API key in `VEO3_API_KEY`)
+- **Sora2** - Video generation (alternative, requires API key in `SORA2_API_KEY`)
+  - OpenAI format API
+  - Supports styles: anime, comic, nostalgic, thanksgiving, news, selfie
+  - Supports character consistency via character_url
+  - Duration constraints: 4, 8, 12 seconds (basic mode); 10, 15, 25 seconds (storyboard mode)
+  - Service selection via `VIDEO_SERVICE_TYPE` env var or project config
 - **Doubao / 火山引擎方舟** - Optional LLM services:
   - Script polishing (`DOUBAO_API_KEY`)
   - Character consistency judging (`JUDGE_LLM_API_KEY`)
@@ -581,6 +600,8 @@ ai-movie-agent-guide/
 ├── services/                   # External API wrappers
 │   ├── nano_banana_service.py
 │   ├── veo3_service.py
+│   ├── sora2_service.py
+│   ├── video_service_factory.py
 │   └── doubao_service.py
 │
 ├── utils/                      # Shared utilities (CLI)

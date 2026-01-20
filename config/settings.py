@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     nano_banana_endpoint: str = "/generate"  # API 端点路径
     nano_banana_model: str = "dall-e-3"  # 图像生成模型名称
 
+    # 视频生成服务选择 (默认使用veo3)
+    video_service_type: Literal["veo3", "sora2"] = "veo3"
+
     # Veo3配置
     veo3_api_key: str = ""
     veo3_base_url: str = "https://api.kuai.host"
@@ -29,6 +32,17 @@ class Settings(BaseSettings):
     veo3_model: str = "veo_3_1"  # 视频生成模型：veo_3_1 或 veo_3_1-fast
     veo3_upload_endpoint: Optional[str] = None  # OpenAI 格式不需要单独上传
     veo3_skip_upload: bool = True  # OpenAI 格式使用 multipart，无需单独上传
+
+    # Sora2配置
+    sora2_api_key: str = ""
+    sora2_base_url: str = "https://api.kuai.host"
+    sora2_endpoint: str = "/v1/videos"
+    sora2_model: str = "sora-2"  # 模型: sora-2 或 sora-2-pro
+    sora2_default_size: str = "1280x720"  # 默认分辨率: 720x1280, 1280x720, 1024x1792, 1792x1024
+    sora2_default_duration: int = 8  # 默认时长（秒）: 4, 8, 12
+    sora2_default_style: Optional[str] = None  # 默认风格: thanksgiving, comic, news, selfie, nostalgic, anime
+    sora2_watermark: bool = False  # 是否添加水印
+    sora2_private: bool = False  # 是否私有视频
 
     # 视频生成重试配置
     video_generation_max_retries: int = 3  # 视频生成失败时最大重试次数

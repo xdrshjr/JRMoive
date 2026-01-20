@@ -22,7 +22,13 @@
       "Bash(findstr:*)",
       "Bash(test -f .env)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(dir:*)",
+      "Bash(copy examplessample_scriptsprogrammer_day.txt projectsprogrammer_dayscript.txt)",
+      "Bash(git grep \"8\" -- \"*.py\")",
+      "Bash(iconv -f gbk -t utf-8)",
+      "Bash(ls -la \"M:\\\\takoAI\\\\ai-movie-agent-guide\\\\backend\\\\temp_projects\\\\quick_workflow_0a7fe445c646\"\" 2>/dev/null || echo \"Directory structure check \")",
+      "Bash(\"M:\\\\takoAI\\\\ai-movie-agent-guide\\\\frontend\\\\src\\\\app\\\\workflow\\\\[projectId]\\\\page.tsx\")"
     ]
   }
 }

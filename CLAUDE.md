@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI短剧自动化生成系统 (AI Drama Automation System) - A multi-agent architecture system that generates complete short drama videos from text scripts. The system integrates Nano Banana Pro (image generation) and Veo3 (video generation) APIs to automate the entire drama production pipeline.
+AI短剧自动化生成系统 (AI Drama Automation System) - A multi-agent architecture system that generates complete short drama videos from text scripts. The system provides **dual interfaces**:
+
+1. **CLI Interface**: Direct command-line access for project management and video generation
+2. **Web Interface**: FastAPI backend + Next.js frontend for browser-based workflows
+
+Both interfaces share the same core video generation pipeline, which integrates Nano Banana Pro (image generation), Veo3 (video generation), and optional LLM services for character consistency judging.
 
 ## Core Commands
 
@@ -50,7 +55,9 @@ python init_project.py
 python examples/complete_workflow_example.py
 ```
 
-### CLI Commands
+### CLI Interface
+
+**CLI Commands**:
 ```bash
 # Create new project
 python cli.py init my_drama
@@ -67,15 +74,40 @@ python cli.py list
 # Advanced options
 python cli.py generate projects/my_drama --log-level DEBUG
 python cli.py generate projects/my_drama --override video.fps=60
+python cli.py generate projects/my_drama --resume  # Resume from checkpoint
+python cli.py generate projects/my_drama --skip-characters  # Skip character reference generation
 ```
 
-**generate-sence Command**:
-- Generates multiple candidate images per scene (configured in `config.yaml`)
-- Saves to `projects/<project>/scenes/all/` directory
-- Simple naming: `scene_001_candidate_1.png`, `scene_001_candidate_2.png`
-- Supports sub-scenes: `scene_001_sub_001_candidate_1.png`
-- No LLM judging - all candidates saved for manual selection
-- Use case: Explore visual styles, preview before full generation, reduce costs
+### Web Interface (Backend + Frontend)
+
+**Backend (FastAPI)**:
+```bash
+# Run development server
+cd backend
+python run_dev.py
+
+# Server will start at http://localhost:8000
+# API docs: http://localhost:8000/docs
+# ReDoc: http://localhost:8000/redoc
+```
+
+**Frontend (Next.js)**:
+```bash
+# Install dependencies
+cd frontend
+npm install
+
+# Run development server
+npm run dev
+# Starts at http://localhost:3000
+
+# Build for production
+npm run build
+npm start
+
+# Type check
+npm run type-check
+```
 
 ### Code Quality
 ```bash
@@ -91,9 +123,82 @@ mypy .
 
 ## System Architecture
 
-### Multi-Agent Workflow
+### Dual Interface Architecture
 
-The system uses a **multi-agent orchestration architecture** where specialized agents collaborate to transform text scripts into video:
+The system operates with two distinct entry points that share the same core generation pipeline:
+
+**CLI Path**: `cli.py` → `ProjectManager` → `ProjectRunner` → Agents
+**Web Path**: Frontend → `FastAPI` → `WorkflowService` → `ProjectRunner` → Agents
+
+Both paths converge at the agent layer, ensuring consistent video generation logic.
+
+### Backend API Architecture (FastAPI)
+
+**API Router Structure** (`backend/api/router.py`):
+- **REST API v1** (`/api/v1/*`):
+  - `/llm/*` - LLM services (script polishing, judging)
+  - `/images/*` - Image generation endpoints
+  - `/videos/*` - Video generation endpoints
+  - `/tasks/*` - Async task management
+  - `/workflow/*` - Complete workflow orchestration
+  - `/projects/*` - Project CRUD operations
+
+- **OpenAI-Compatible API** (`/v1/*`):
+  - `/chat/completions` - Chat completion endpoint
+  - `/images/generations` - Image generation endpoint
+  - `/videos/generations` - Video generation endpoint
+
+**Key Backend Services**:
+1. **TaskManager** (`backend/core/task_manager.py`):
+   - Async task submission and tracking
+   - In-memory task storage with automatic cleanup
+   - Status callback system for project synchronization
+   - Semaphore-based concurrency control
+
+2. **WorkflowService** (`backend/core/workflow_service.py`):
+   - Bridges FastAPI and CLI-based generation logic
+   - Creates temporary project structures for web-based workflows
+   - Manages asset URL generation and storage
+   - Progress callback translation
+
+3. **ProjectManager** (`backend/core/project_manager.py`):
+   - Project persistence and metadata management
+   - Task-to-project synchronization
+   - Status tracking and result aggregation
+
+**Middleware**:
+- CORS middleware for frontend communication
+- Custom logging middleware
+- Exception handlers for consistent error responses
+
+### Frontend Architecture (Next.js)
+
+**Tech Stack**:
+- Next.js 14.2 (App Router)
+- React 18.3
+- TypeScript 5.3
+- Tailwind CSS 3.4
+
+**Key Pages**:
+- `/` - Home page with project grid
+- `/projects/new` - New project creation wizard
+- `/projects/[projectId]` - Project detail view
+- `/workflow/[projectId]` - Workflow execution page
+
+**Component Structure**:
+- Step-based workflow (Step0-Step5)
+- Reusable UI components (`components/ui/*`)
+- ModeSidebar for workflow type selection
+- Real-time progress monitoring with LogViewer
+
+**API Integration** (`lib/api.ts`):
+- Centralized API client with fetch wrappers
+- Type-safe request/response handling
+- Error boundary integration
+
+### Multi-Agent Video Generation Pipeline
+
+The core video generation pipeline uses specialized agents that collaborate:
 
 1. **DramaGenerationOrchestrator** (`agents/orchestrator_agent.py`) - Main coordinator that orchestrates the entire workflow
 2. **ScriptParserAgent** (`agents/script_parser_agent.py`) - Parses text scripts into structured Scene objects
@@ -210,6 +315,29 @@ Both image and video agents support concurrent processing with configurable limi
 - **Concurrent Judging**: LLM evaluation of candidates also runs concurrently, with all judge tasks executed in parallel
 - Example: With `candidate_images_per_scene: 3`, all 3 candidates are generated simultaneously, then all 3 are judged simultaneously
 
+### Character Consistency Judging
+
+**LLM-Based Quality Scoring** (see `docs/CHARACTER_CONSISTENCY_JUDGING.md`):
+- Generate N candidate images per scene (configurable: 1-5, recommended: 3-5)
+- Use Judge LLM (e.g., Doubao multimodal) to score each candidate against character reference images
+- Automatically select highest-scoring candidate for video generation
+- Optionally save/delete non-selected candidates
+
+**Configuration**:
+```bash
+# .env
+ENABLE_CHARACTER_CONSISTENCY_JUDGE=true
+CANDIDATE_IMAGES_PER_SCENE=3
+JUDGE_LLM_API_KEY=your_judge_api_key
+JUDGE_LLM_MODEL=doubao-seed-1-6-251015
+JUDGE_TEMPERATURE=0.3
+```
+
+**Judge LLM API Requirements**:
+- Must support multimodal input (image + text)
+- Currently supports 火山引擎方舟 API (Volcano Engine Ark)
+- API format: Responses API with `input_image` and `input_text` content types
+
 ### Script Parsing Format
 Expected script format (see `examples/sample_scripts/programmer_day.txt`):
 ```
@@ -250,12 +378,17 @@ When creating new agents:
 - Log errors with correlation_id for request tracing
 
 **Enhanced Error Handling (2025-01)**:
-- API services (Nano Banana Pro, Veo3) now capture complete error responses
+- API services (Nano Banana Pro, Veo3) capture complete error responses
 - `ServiceException` includes: error_code, error_type, stage, api_response, retryable flag
 - Task manager preserves full error context including traceback and service details
 - Frontend displays detailed error information with expandable details section
 - Errors show: service name, stage, error type, API error code, retryability, full API response
-- See `docs/ERROR_HANDLING_IMPROVEMENTS.md` for complete documentation
+- Backend exceptions are properly propagated through task manager to frontend
+- Custom exception classes in `backend/core/exceptions.py`:
+  - `TaskNotFoundException` - Task ID not found
+  - `TaskCancelledException` - Task was cancelled
+  - `StorageException` - Storage operation failed
+  - `ServiceException` - External service error (contains full API response)
 
 ### Resource Management
 - Always call `await agent.close()` to cleanup resources
@@ -268,6 +401,57 @@ When creating new agents:
 - Access config via `config.settings` singleton
 - Override config per-agent via constructor `config` parameter
 - Use `Optional[str]` for optional API keys (e.g., openai_api_key)
+- Backend config loaded via `backend/config.py` using Pydantic settings
+- Frontend uses environment variables via Next.js `.env.local`
+
+### Backend Development Notes
+
+**Path Management**:
+- Backend adds parent directory to `sys.path` to import CLI modules
+- Temporary projects stored in `backend/temp_projects/workflow_*`
+- Permanent projects stored in `backend/projects/`
+- Assets managed via `AssetManager` (`backend/utils/asset_manager.py`)
+
+**Task Lifecycle**:
+1. Frontend submits workflow request to `/api/v1/workflow/execute`
+2. WorkflowService creates temp project and invokes ProjectRunner
+3. TaskManager tracks progress via status callbacks
+4. ProjectManager syncs task status back to project metadata
+5. Frontend polls `/api/v1/tasks/{task_id}` for progress updates
+
+**Async Patterns**:
+- All service methods are `async def`
+- Use `asyncio.gather()` for parallel operations
+- Use `asyncio.Semaphore` for rate limiting
+- TaskManager provides callback registration for status updates
+
+**Logging**:
+- Structured logging via `loguru` in CLI
+- Custom logger setup in `backend/utils/logger.py`
+- Request/response logging via middleware
+- Log helpers in `backend/utils/log_helpers.py` truncate sensitive data (base64 images)
+
+### Frontend Development Notes
+
+**State Management**:
+- No Redux/Zustand - uses React state and URL params
+- Project state stored in backend, fetched on page load
+- Real-time progress via polling (not WebSockets)
+
+**Routing**:
+- App Router (Next.js 14+) with TypeScript
+- Dynamic routes: `[projectId]` for project-specific pages
+- Server components for static content, client components for interactivity
+
+**API Calls**:
+- Centralized in `lib/api.ts`
+- Type definitions in `lib/types.ts` and `lib/types/*.ts`
+- Error handling with try-catch and user-friendly messages
+
+**Styling**:
+- Tailwind CSS with custom Apple-inspired design
+- Component library in `components/ui/*`
+- Responsive design with mobile-first approach
 
 ## Project Status
 
@@ -285,46 +469,157 @@ Key files demonstrate working implementation:
 
 ## External Dependencies
 
-### Required
+### Required System Dependencies
 - **Python 3.9+**
+- **Node.js 18.0+** and **npm 9.0+** (for frontend)
 - **FFmpeg 4.0+** - Must be installed separately and available in PATH
 
-### Python Packages
+### Python Packages (requirements.txt)
 - `pydantic` 2.5.0 - Data validation
 - `httpx` 0.25.2 - HTTP client for API calls
 - `aiohttp` 3.9.1 - Async HTTP operations
-- `moviepy` 1.0.3 - Video editing
+- `moviepy` >=2.0.0 - Video editing
 - `loguru` 0.7.2 - Advanced logging
 - `pytest` 7.4.3 + `pytest-asyncio` 0.21.1 - Testing
+- `fastapi` + `uvicorn` - Web API framework (backend)
 
-### API Services
-- **Nano Banana Pro** - Image generation (requires API key)
-- **Veo3** - Video generation (requires API key)
-- **OpenAI** (optional) - Script optimization
+### Frontend Packages (frontend/package.json)
+- `next` 14.2.0 - React framework
+- `react` 18.3.0 + `react-dom` - UI library
+- `typescript` 5.3.0 - Type safety
+- `tailwindcss` 3.4.1 - Styling framework
+- `js-yaml` 4.1.0 - YAML parsing
+
+### External API Services
+- **Nano Banana Pro** - Image generation (requires API key in `NANO_BANANA_API_KEY`)
+- **Veo3** - Video generation (requires API key in `VEO3_API_KEY`)
+- **Doubao / 火山引擎方舟** - Optional LLM services:
+  - Script polishing (`DOUBAO_API_KEY`)
+  - Character consistency judging (`JUDGE_LLM_API_KEY`)
+- **Midjourney** - Optional alternative image service (see `docs/midjourney_integration.md`)
 
 ## File Structure Highlights
 
 ```
-agents/               # All agent implementations
-  base_agent.py       # BaseAgent + MessageBus + WorkflowStateManager + ErrorHandler
-  orchestrator_agent.py  # Main coordinator with SimpleDramaGenerator
-models/
-  script_models.py    # Script, Scene, Character, Dialogue models
-services/             # External API wrappers
-  nano_banana_service.py
-  veo3_service.py
-utils/                # Shared utilities
-  retry.py            # @async_retry decorator
-  concurrency.py      # ConcurrencyLimiter, RateLimiter, ResultCache
-  checkpoint.py       # CheckpointManager
-  progress_monitor.py # Progress tracking
-  task_queue.py       # Async task queue
-config/
-  settings.py         # Pydantic settings (loads from .env)
-examples/
-  complete_workflow_example.py  # Comprehensive usage examples
-tests/
-  test_agents/        # Agent unit tests
-  test_integration/   # End-to-end workflow tests
-  test_performance/   # Performance benchmarks
+ai-movie-agent-guide/
+├── cli.py                      # CLI entry point
+├── init_project.py             # Project initialization script
+├── requirements.txt            # Python dependencies
+│
+├── agents/                     # Core agent implementations
+│   ├── base_agent.py           # BaseAgent + MessageBus + WorkflowStateManager + ErrorHandler
+│   ├── orchestrator_agent.py   # Main coordinator with SimpleDramaGenerator
+│   ├── script_parser_agent.py
+│   ├── image_generator_agent.py
+│   ├── video_generator_agent.py
+│   └── video_composer_agent.py
+│
+├── backend/                    # FastAPI web backend
+│   ├── main.py                 # FastAPI app initialization
+│   ├── run_dev.py              # Development server runner
+│   ├── config.py               # Pydantic settings
+│   │
+│   ├── api/                    # API routes
+│   │   ├── router.py           # Main router combining v1 and OpenAI APIs
+│   │   ├── v1/                 # REST API v1
+│   │   │   ├── llm.py
+│   │   │   ├── images.py
+│   │   │   ├── videos.py
+│   │   │   ├── tasks.py
+│   │   │   └── workflow.py
+│   │   ├── openai/             # OpenAI-compatible endpoints
+│   │   │   ├── chat.py
+│   │   │   ├── images.py
+│   │   │   └── videos.py
+│   │   └── routes/
+│   │       └── projects.py     # Project CRUD
+│   │
+│   ├── core/                   # Core backend services
+│   │   ├── task_manager.py     # Async task execution and tracking
+│   │   ├── workflow_service.py # Bridges FastAPI and CLI generation
+│   │   ├── project_manager.py  # Project persistence
+│   │   ├── models.py           # Pydantic models for API
+│   │   └── exceptions.py       # Custom exception classes
+│   │
+│   ├── middleware/             # FastAPI middleware
+│   │   ├── logging.py
+│   │   └── error_handler.py
+│   │
+│   └── utils/                  # Backend utilities
+│       ├── logger.py
+│       ├── asset_manager.py
+│       └── log_helpers.py
+│
+├── frontend/                   # Next.js web frontend
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── tailwind.config.js
+│   │
+│   └── src/
+│       ├── app/                # App Router pages
+│       │   ├── page.tsx        # Home page
+│       │   ├── layout.tsx      # Root layout
+│       │   ├── projects/
+│       │   │   ├── new/page.tsx
+│       │   │   └── [projectId]/page.tsx
+│       │   └── workflow/
+│       │       └── [projectId]/page.tsx
+│       │
+│       ├── components/         # React components
+│       │   ├── steps/          # Step-based workflow components
+│       │   └── ui/             # Reusable UI components
+│       │
+│       └── lib/                # Utilities and types
+│           ├── api.ts          # API client
+│           ├── types.ts        # TypeScript type definitions
+│           └── types/          # Additional type definitions
+│
+├── models/                     # Data models
+│   ├── script_models.py        # Script, Scene, Character, Dialogue models
+│   └── config_models.py        # Configuration models
+│
+├── services/                   # External API wrappers
+│   ├── nano_banana_service.py
+│   ├── veo3_service.py
+│   └── doubao_service.py
+│
+├── utils/                      # Shared utilities (CLI)
+│   ├── retry.py                # @async_retry decorator
+│   ├── concurrency.py          # ConcurrencyLimiter, RateLimiter, ResultCache
+│   ├── checkpoint.py           # CheckpointManager
+│   ├── progress_monitor.py     # Progress tracking
+│   ├── task_queue.py           # Async task queue
+│   └── video_utils.py          # FFmpeg wrapper
+│
+├── config/                     # Configuration (CLI)
+│   └── settings.py             # Pydantic settings (loads from .env)
+│
+├── core/                       # Core modules (CLI)
+│   ├── project_manager.py      # CLI project manager
+│   ├── config_loader.py        # YAML config loader
+│   ├── runner.py               # Project execution runner
+│   ├── validators.py           # Validation logic
+│   └── errors.py               # Error definitions
+│
+├── projects/                   # User projects (CLI)
+│   └── [project_name]/
+│       ├── config.yaml
+│       ├── script.txt
+│       ├── characters/
+│       └── outputs/
+│
+├── examples/                   # Example code
+│   ├── complete_workflow_example.py
+│   └── sample_scripts/
+│
+├── tests/                      # Test suite
+│   ├── test_agents/
+│   ├── test_services/
+│   ├── test_integration/
+│   └── test_performance/
+│
+└── docs/                       # Documentation
+    ├── CHARACTER_CONSISTENCY_JUDGING.md
+    ├── MIDJOURNEY_INTEGRATION_STATUS.md
+    └── ...
 ```
